@@ -19,7 +19,7 @@ struct List{T} <: AbstractVector{T}
 end
 
 items(x::List) = getfield(x, :items)
-Base.getindex(x::List) = items(x)
+Base.getindex(x::List) = map(getindex, items(x))
 List(T=Any) = List(T[])
 List(T, n) = List(Vector{T}(undef, n))
 List(n::Integer) = List(Any, n)
@@ -147,6 +147,8 @@ function _getindex(::ArrayLike, x, ::typeof(~), key::Union{KeyInd, Colon})
     end
     return values
 end
+
+_getindex(::Nothing, args...) = throw(ArgumentError("Selection syntax not defined for: `$(args[1])`"))
 
 macro selectors(T)
     esc(quote

@@ -1,20 +1,19 @@
-struct Object{T <: AbstractVector{UInt8}}
-    buf::T
-    pos::Int
-end
-
-Selectors.SelectorType(::Object) = Selectors.ObjectLike()
-
-Base.show(io::IO, x::Object) = print(io, "JSONBase.Object(", ")")
-
-function Selectors.foreach(f, x::Object)
+@inline function parseobject(x::LazyValue, keyvalfunc::F) where {F}
     pos = getpos(x)
     buf = getbuf(x)
-    len = length(buf)
+    len = getlength(buf)
+    b = getbyte(buf, pos)
+    if b != UInt8('{')
+        error = ExpectedOpeningObjectChar
+        @goto invalid
+    end
+    pos += 1
+    @nextbyte
+    if b == UInt8('}')
+        return pos + 1
+    end
     while true
-        pos += 1 # move past opening '{', or ','
-        @nextbyte
-        key, pos = readkey(buf, pos, len, b)
+        key, pos = parsestring(buf, pos, len, b)
         @nextbyte
         if b != UInt8(':')
             error = ExpectedColon
@@ -23,7 +22,7 @@ function Selectors.foreach(f, x::Object)
         pos += 1
         @nextbyte
         # we're now positioned at the start of the value
-        ret = f(key, lazy(buf, pos, len, b))
+        ret = keyvalfunc(key, tolazy(buf, pos, len, b))
         ret isa Selectors.Continue || return ret
         pos = ret.pos == 0 ? skip(buf, pos, len) : ret.pos
         @nextbyte
@@ -33,10 +32,40 @@ function Selectors.foreach(f, x::Object)
             error = ExpectedComma
             @goto invalid
         end
+        pos += 1 # move past ','
+        @nextbyte
     end
-
 @label invalid
     invalid(error, buf, pos, "object")
+end
+
+@inline function parseobject(x::BJSONValue, keyvalfunc::F) where {F}
+    tape = gettape(x)
+    pos = getpos(x)
+    bm = BJSONMeta(getbyte(tape, pos))
+    bm.type == BJSONType.OBJECT || throw(ArgumentError("expected bjson object: `$(bm.type)`"))
+    pos += 1
+    nbytes = _readint(tape, pos, 4)
+    pos += 4
+    nfields = _readint(tape, pos, 4)
+    pos += 4
+    for _ = 1:nfields
+        key, pos = parsestring(BJSONValue(tape, pos, BJSONType.STRING))
+        b = BJSONValue(tape, pos, gettype(tape, pos))
+        ret = keyvalfunc(key, b)
+        ret isa Selectors.Continue || return ret
+        pos = ret.pos == 0 ? skip(b) : ret.pos
+    end
+    return pos
+end
+
+struct GenericObjectClosure
+    dict::Dict{String, Any}
+end
+
+@inline function (f::GenericObjectClosure)(key, val)
+    pos = _togeneric(val, x -> f.dict[key] = x)
+    return Selectors.Continue(pos)
 end
 
 function skipobject(buf, pos, len, b)
@@ -63,18 +92,3 @@ function skipobject(buf, pos, len, b)
 @label invalid
     invalid(error, buf, pos, "skipobject")
 end
-
-# lazy selection operations
-Selectors.@selectors Object
-
-# materialize
-function materialize(x::Object)
-    d = Dict{Key, Any}()
-    opos = Selectors.foreach(x) do k, v
-        val, pos = materialize(v)
-        d[k] = val
-        return Selectors.Continue(pos)
-    end
-    return d, opos
-end
-Base.getindex(x::Object) = materialize(x)[1]

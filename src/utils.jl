@@ -1,12 +1,20 @@
-@enum Error UnexpectedEOF ExpectedOpeningObjectChar ExpectedOpeningQuoteChar ExpectedOpeningArrayChar ExpectedClosingArrayChar ExpectedComma ExpectedColon ExpectedNewline InvalidChar InvalidNumber
+@enum Error InvalidJSON UnexpectedEOF ExpectedOpeningObjectChar ExpectedOpeningQuoteChar ExpectedOpeningArrayChar ExpectedClosingArrayChar ExpectedComma ExpectedColon ExpectedNewline InvalidChar InvalidNumber
 
 @noinline invalid(error, buf, pos, T) = throw(ArgumentError("""
 invalid JSON at byte position $pos while parsing type $T: $error
 $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 """))
 
+getlength(buf::AbstractVector{UInt8}) = length(buf)
+getlength(buf::AbstractString) = sizeof(buf)
+
 function getbyte(buf::AbstractVector{UInt8}, pos)
     @inbounds b = buf[pos]
+    return b
+end
+
+function getbyte(buf::AbstractString, pos)
+    @inbounds b = codeunit(buf, pos)
     return b
 end
 
