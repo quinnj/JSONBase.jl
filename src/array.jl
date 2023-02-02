@@ -10,7 +10,7 @@
     pos += 1
     @nextbyte
     if b == UInt8(']')
-        return pos + 1
+        return Selectors.Continue(pos + 1)
     end
     i = 1
     while true
@@ -20,7 +20,7 @@
         pos = ret.pos == 0 ? skip(buf, pos, len) : ret.pos
         @nextbyte
         if b == UInt8(']')
-            return pos + 1
+            return Selectors.Continue(pos + 1)
         elseif b != UInt8(',')
             error = ExpectedComma
             @goto invalid
@@ -50,7 +50,7 @@ end
         ret isa Selectors.Continue || return ret
         pos = ret.pos == 0 ? skip(b) : ret.pos
     end
-    return pos
+    return Selectors.Continue(pos)
 end
 
 struct GenericArrayClosure

@@ -87,8 +87,8 @@ function skip(x::BJSONValue)
         nbytes = _readint(tape, pos, 4)
         return pos + 8 + nbytes
     elseif T == BJSONType.STRING
-        pos += 1
         sm = BJSONMeta(getbyte(tape, pos)).size
+        pos += 1
         if sm.is_size_embedded
             return pos + sm.embedded_size
         else

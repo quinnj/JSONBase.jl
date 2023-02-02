@@ -46,9 +46,11 @@ function tolazy(buf, pos, len, b)
     invalid(error, buf, pos, Any)
 end
 
+keyvaltostring(f) = (k, v) -> f(tostring(k), v)
+
 function Selectors.foreach(f, x::LazyValue)
     if gettype(x) == JSONType.OBJECT
-        return parseobject(x, f)
+        return parseobject(x, keyvaltostring(f))
     elseif gettype(x) == JSONType.ARRAY
         return parsearray(x, f)
     else
@@ -59,17 +61,17 @@ end
 @inline function _togeneric(x::LazyValue, valfunc::F) where {F}
     if gettype(x) == JSONType.OBJECT
         d = Dict{String, Any}()
-        pos = parseobject(x, GenericObjectClosure(d))
+        pos = parseobject(x, GenericObjectClosure(d)).pos
         valfunc(d)
         return pos
     elseif gettype(x) == JSONType.ARRAY
         a = Any[]
-        pos = parsearray(x, GenericArrayClosure(a))
+        pos = parsearray(x, GenericArrayClosure(a)).pos
         valfunc(a)
         return pos
     elseif gettype(x) == JSONType.STRING
         str, pos = parsestring(getbuf(x), getpos(x))
-        valfunc(str)
+        valfunc(tostring(str))
         return pos
     elseif gettype(x) == JSONType.NUMBER
         return parsenumber(x, valfunc)

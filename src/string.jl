@@ -1,5 +1,3 @@
-_unsafe_string(p, len) = ccall(:jl_pchar_to_string, Ref{Base.String}, (Ptr{UInt8}, Int), p, len)
-
 @inline function parsestring(buf, pos, len=getlength(buf), b=getbyte(buf, pos))
     if b != UInt8('"')
         error = ExpectedOpeningQuoteChar
@@ -19,8 +17,7 @@ _unsafe_string(p, len) = ccall(:jl_pchar_to_string, Ref{Base.String}, (Ptr{UInt8
         end
         @nextbyte(false)
     end
-    str = _unsafe_string(pointer(buf, spos), pos - spos)
-    return escaped ? unescape(str) : str, pos + 1
+    return PtrString(pointer(buf, spos), pos - spos, escaped), pos + 1
 
 @label invalid
     invalid(error, buf, pos, "string")
@@ -39,8 +36,7 @@ function parsestring(x::BJSONValue)
         len = _readint(tape, pos, 4)
         pos += 4
     end
-    str = _unsafe_string(pointer(tape, pos), len)
-    return str, pos + len
+    return PtrString(pointer(tape, pos), len, false), pos + len
 end
 
 function skipstring(buf, pos, len, b)

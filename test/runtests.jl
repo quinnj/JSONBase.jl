@@ -69,6 +69,46 @@ using Test, JSONBase #, BenchmarkTools, JSON
     @test_throws ArgumentError JSONBase.togeneric("trub")
 end
 
+@testset "BJSONValue" begin
+    @testset "BJSONMeta" begin
+        em, sm = JSONBase.sizemeta(1)
+        @test em
+        @test sm.is_size_embedded
+        @test sm.embedded_size == 1
+        em, sm = JSONBase.sizemeta(15)
+        @test em
+        @test sm.is_size_embedded
+        @test sm.embedded_size == 15
+        em, sm = JSONBase.sizemeta(16)
+        @test !em
+        @test !sm.is_size_embedded
+        @test sm.embedded_size == 0
+        bm = JSONBase.BJSONMeta(JSONBase.BJSONType.OBJECT)
+        @test bm.type == JSONBase.BJSONType.OBJECT
+        @test bm.size.is_size_embedded
+    end
+
+    make(::Type{String}, x) = x
+    make(::Type{SubString{String}}, x) = SubString(x)
+    make(::Type{Vector{UInt8}}, x) = Vector{UInt8}(x)
+    make(::Type{IOBuffer}, x) = IOBuffer(x)
+    for T in (String, SubString{String}, IOBuffer, Vector{UInt8})
+        @test JSONBase.tobjson(make(T, "{}"))[] == Dict{String, Any}()
+        @test JSONBase.tobjson(make(T, "1"))[] == 1
+        @test JSONBase.tobjson(make(T, "3.14"))[] == 3.14
+        @test JSONBase.tobjson(make(T, "true"))[] == true
+        @test JSONBase.tobjson(make(T, "false"))[] == false
+        @test JSONBase.tobjson(make(T, "null"))[] === nothing
+        @test JSONBase.tobjson(make(T, "[]"))[] == Any[]
+        @test JSONBase.tobjson(make(T, "\"\""))[] == ""
+        @test_throws ArgumentError JSONBase.tobjson(make(T, "a"))
+    end
+    x = JSONBase.tobjson(""" {"a": 1, "b": null, "c": true, "d": false, "e": "hey there sailor", "f": [], "g": {}} """)
+    @test x[] == Dict{String, Any}("a" => 1, "b" => nothing, "c" => true, "d" => false, "e" => "hey there sailor", "f" => Any[], "g" => Dict{String, Any}())
+    x = JSONBase.tobjson("""{"category": "reference","author": "Nigel Rees","title": "Sayings of the Century","price": 8.95}""")
+    @test x[] == Dict{String, Any}("category" => "reference", "author" => "Nigel Rees", "title" => "Sayings of the Century", "price" => 8.95)
+end
+
 @testset "JSONBase.Selectors" begin
     # lazy indexing selection support
     # examples from https://support.smartbear.com/alertsite/docs/monitors/api/endpoint/jsonpath.html
@@ -127,46 +167,7 @@ end
         @test y == ["The Lord of the Rings"]
         y = x[~, :][] # All properties of the root object flattened in one list/array
         @test length(y) == 20
+        @test_throws KeyError x.foo
+        @test_throws KeyError x.store.book[100]
     end
 end
-
-@testset "BJSONValue" begin
-    @testset "BJSONMeta" begin
-        em, sm = JSONBase.sizemeta(1)
-        @test em
-        @test sm.is_size_embedded
-        @test sm.embedded_size == 1
-        em, sm = JSONBase.sizemeta(15)
-        @test em
-        @test sm.is_size_embedded
-        @test sm.embedded_size == 15
-        em, sm = JSONBase.sizemeta(16)
-        @test !em
-        @test !sm.is_size_embedded
-        @test sm.embedded_size == 0
-        bm = JSONBase.BJSONMeta(JSONBase.BJSONType.OBJECT)
-        @test bm.type == JSONBase.BJSONType.OBJECT
-        @test bm.size.is_size_embedded
-    end
-
-    make(::Type{String}, x) = x
-    make(::Type{SubString{String}}, x) = SubString(x)
-    make(::Type{Vector{UInt8}}, x) = Vector{UInt8}(x)
-    make(::Type{IOBuffer}, x) = IOBuffer(x)
-    for T in (String, SubString{String}, IOBuffer, Vector{UInt8})
-        @test JSONBase.tobjson(make(T, "{}"))[] == Dict{String, Any}()
-        @test JSONBase.tobjson(make(T, "1"))[] == 1
-        @test JSONBase.tobjson(make(T, "3.14"))[] == 3.14
-        @test JSONBase.tobjson(make(T, "true"))[] == true
-        @test JSONBase.tobjson(make(T, "false"))[] == false
-        @test JSONBase.tobjson(make(T, "null"))[] === nothing
-        @test JSONBase.tobjson(make(T, "[]"))[] == Any[]
-        @test JSONBase.tobjson(make(T, "\"\""))[] == ""
-        @test_throws ArgumentError JSONBase.tobjson(make(T, "a"))
-    end
-    x = JSONBase.tobjson("""{"category": "reference","author": "Nigel Rees","title": "Sayings of the Century","price": 8.95}""")
-end
-
-# jsonb = Vector{UInt8}(json)
-# @btime JSONBase.togeneric(json)
-# @btime JSON.parse(json)

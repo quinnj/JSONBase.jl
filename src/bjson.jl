@@ -63,14 +63,14 @@ macro check(n)
     end)
 end
 
-mutable struct BJSONObjectClosure
+mutable struct BJSONObjectClosure{T}
     tape::Vector{UInt8}
     i::Int
-    x::LazyValue
+    x::LazyValue{T}
     nfields::Int
 end
 
-function (f::BJSONObjectClosure)(k, v)
+@inline function (f::BJSONObjectClosure{T})(k, v) where {T}
     i = _tobjson(k, f.tape, f.i, f.x)
     pos, f.i = _tobjson(v, f.tape, i)
     f.nfields += 1
@@ -83,34 +83,46 @@ mutable struct BJSONArrayClosure
     nelems::Int
 end
 
-function (f::BJSONArrayClosure)(_, v)
+@inline function (f::BJSONArrayClosure)(_, v)
     pos, f.i = _tobjson(v, f.tape, f.i)
     f.nelems += 1
     return Selectors.Continue(pos)
 end
 
-mutable struct BJSONNumberClosure
+struct BJSONStringClosure{T}
     tape::Vector{UInt8}
     i::Int
-    x::LazyValue
+    newi::Base.RefValue{Int}
+    x::LazyValue{T}
 end
 
-@inline function (f::BJSONNumberClosure)(y::Y) where {Y}
-    f.i = _tobjson(y, f.tape, f.i, f.x, true)
+@inline function (f::BJSONStringClosure{T})(str::PtrString) where {T}
+    f.newi[] = unsafe_copyto!(str, f.tape, f.i, f.x)
+    return
+end
+
+struct BJSONNumberClosure{T}
+    tape::Vector{UInt8}
+    i::Int
+    newi::Base.RefValue{Int}
+    x::LazyValue{T}
+end
+
+@inline function (f::BJSONNumberClosure{T})(y::Y) where {T, Y}
+    f.newi[] = _tobjson(y, f.tape, f.i, f.x, true)
     return
 end
 
 function _tobjson(x::LazyValue, tape, i)
     if gettype(x) == JSONType.OBJECT
-        # skip past our BJSONMeta tape slot for now
         tape_i = i
         @check 1 + 4 + 4
-        i += 1
+        # skip past our BJSONMeta tape slot for now
         # skip 8 bytes for total # of bytes (4) and # of fields (4)
-        i += 8
+        i += 1 + 4 + 4
         # now we can start writing the fields
         c = BJSONObjectClosure(tape, i, x, 0)
-        pos = parseobject(x, c)
+        pos = parseobject(x, c).pos
         # compute SizeMeta, even though we write nfields unconditionally
         _, sm = sizemeta(c.nfields)
         # note: we pre-@checked earlier
@@ -134,7 +146,7 @@ function _tobjson(x::LazyValue, tape, i)
         i += 8
         # now we can start writing the elements
         c = BJSONArrayClosure(tape, i, 0)
-        pos = parsearray(x, c)
+        pos = parsearray(x, c).pos
         # compute SizeMeta, even though we write nelems unconditionally
         _, sm = sizemeta(c.nelems)
         # store eltype in BJSONMeta size or 0x1f if not homogenous
@@ -150,18 +162,12 @@ function _tobjson(x::LazyValue, tape, i)
         _writenumber(Int32(c.nelems), tape, tape_i + 5)
         return pos, i
     elseif gettype(x) == JSONType.STRING
-        # TODO: benchmark lazy strings
-        # where store original buf in BJSONValue
-        # and strings are just offset, len, escaped
-        # alternatively, we provide the tape to parsestring
-        # and write the string bytes directly to tape to avoid
-        # the extra string allocation
-        str, pos = parsestring(getbuf(x), getpos(x))
-        return pos, _tobjson(str, tape, i, x)
+        y, pos = parsestring(getbuf(x), getpos(x))
+        return pos, _tobjson(y, tape, i, x)
     elseif gettype(x) == JSONType.NUMBER
-        c = BJSONNumberClosure(tape, i, x)
+        c = BJSONNumberClosure(tape, i, Ref(0), x)
         pos = parsenumber(x, c)
-        return pos, c.i
+        return pos, c.newi[]
     elseif gettype(x) == JSONType.NULL
         @check 1
         tape[i] = UInt8(BJSONMeta(BJSONType.NULL))
@@ -179,8 +185,8 @@ function _tobjson(x::LazyValue, tape, i)
     end
 end
 
-@inline function _tobjson(str::String, tape, i, x::LazyValue)
-    n = sizeof(str)
+@inline function _tobjson(y::PtrString, tape, i, x)
+    n = y.len
     embedded_size, sm = sizemeta(n)
     @check 1 + (embedded_size ? 0 : 4) + n
     tape[i] = UInt8(BJSONMeta(BJSONType.STRING, sm))
@@ -188,8 +194,17 @@ end
     if !embedded_size
         i = _writenumber(Int32(n), tape, i)
     end
-    GC.@preserve tape str unsafe_copyto!(pointer(tape, i), pointer(str), n)
-    return i + n
+    return unsafe_copyto!(y, tape, i, x)
+end
+
+@inline function Base.unsafe_copyto!(ptrstr::PtrString, tape::Vector{UInt8}, i, x) # x is LazyValue
+    @check ptrstr.len
+    if ptrstr.escaped
+        return i + GC.@preserve tape unsafe_unescape_to_buffer(ptrstr.ptr, ptrstr.len, pointer(tape, i))
+    else
+        GC.@preserve tape ccall(:memcpy, Ptr{Cvoid}, (Ptr{UInt8}, Ptr{UInt8}, Csize_t), pointer(tape, i), ptrstr.ptr, ptrstr.len)
+        return i + ptrstr.len
+    end
 end
 
 function embedded_sizemeta(n)
@@ -202,7 +217,7 @@ end
 function writenumber(y::T, tape, i, x::LazyValue) where {T <: Number}
     n = sizeof(y)
     sm = embedded_sizemeta(n)
-    @check 1
+    @check 1 + n
     tape[i] = UInt8(BJSONMeta(y isa Integer ? BJSONType.INT : BJSONType.FLOAT, sm))
     i += 1
     return _writenumber(y, tape, i)
@@ -283,7 +298,7 @@ end
 function Selectors.foreach(f, x::BJSONValue)
     T = gettype(x)
     if T == BJSONType.OBJECT
-        return parseobject(x, f)
+        return parseobject(x, keyvaltostring(f))
     elseif T == BJSONType.ARRAY
         return parsearray(x, f)
     else
@@ -295,17 +310,17 @@ end
     T = gettype(x)
     if T == BJSONType.OBJECT
         d = Dict{String, Any}()
-        pos = parseobject(x, GenericObjectClosure(d))
+        pos = parseobject(x, GenericObjectClosure(d)).pos
         valfunc(d)
         return pos
     elseif T == BJSONType.ARRAY
         a = Any[]
-        pos = parsearray(x, GenericArrayClosure(a))
+        pos = parsearray(x, GenericArrayClosure(a)).pos
         valfunc(a)
         return pos
     elseif T == BJSONType.STRING
         str, pos = parsestring(x)
-        valfunc(str)
+        valfunc(tostring(str))
         return pos
     elseif T == BJSONType.INT
         return parseint(x, valfunc)

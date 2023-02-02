@@ -61,53 +61,72 @@ charvalue(b) = (UInt8('0') <= b <= UInt8('9')) ? b - UInt8('0') :
 @noinline invalid_escape(str) = throw(ArgumentError("encountered invalid escape character in json string: \"$(Base.String(str))\""))
 @noinline unescaped_control(b) = throw(ArgumentError("encountered unescaped control character in json: '$(escape_string(Base.string(Char(b))))'"))
 
-function unescape(s)
-    n = ncodeunits(s)
-    buf = Base.StringVector(n)
+_unsafe_string(p, len) = ccall(:jl_pchar_to_string, Ref{Base.String}, (Ptr{UInt8}, Int), p, len)
+
+struct PtrString
+    ptr::Ptr{UInt8}
+    len::Int
+    escaped::Bool
+end
+
+function tostring(x::PtrString)
+    if x.escaped
+        str = Base.StringVector(x.len)
+        len = GC.@preserve str unsafe_unescape_to_buffer(x.ptr, x.len, pointer(str))
+        resize!(str, len)
+        return String(str)
+    else
+        return _unsafe_string(x.ptr, x.len)
+    end
+end
+
+# unsafe because we're not checking that src or dst are valid pointers
+# NOR are we checking that up to `n` bytes after dst are also valid to write to
+function unsafe_unescape_to_buffer(src::Ptr{UInt8}, n::Int, dst::Ptr{UInt8})
     len = 1
     i = 1
     @inbounds begin
         while i <= n
-            b = codeunit(s, i)
+            b = unsafe_load(src, i)
             if b == UInt8('\\')
                 i += 1
                 i > n && invalid_escape(s)
-                b = codeunit(s, i)
+                b = unsafe_load(src, i)
                 if b == UInt8('u')
                     c = 0x0000
                     i += 1
                     i > n && invalid_escape(s)
-                    b = codeunit(s, i)
+                    b = unsafe_load(src, i)
                     c = (c << 4) + charvalue(b)
                     i += 1
                     i > n && invalid_escape(s)
-                    b = codeunit(s, i)
+                    b = unsafe_load(src, i)
                     c = (c << 4) + charvalue(b)
                     i += 1
                     i > n && invalid_escape(s)
-                    b = codeunit(s, i)
+                    b = unsafe_load(src, i)
                     c = (c << 4) + charvalue(b)
                     i += 1
                     i > n && invalid_escape(s)
-                    b = codeunit(s, i)
+                    b = unsafe_load(src, i)
                     c = (c << 4) + charvalue(b)
                     if utf16_is_surrogate(c)
                         i += 3
                         i > n && invalid_escape(s)
                         c2 = 0x0000
-                        b = codeunit(s, i)
+                        b = unsafe_load(src, i)
                         c2 = (c2 << 4) + charvalue(b)
                         i += 1
                         i > n && invalid_escape(s)
-                        b = codeunit(s, i)
+                        b = unsafe_load(src, i)
                         c2 = (c2 << 4) + charvalue(b)
                         i += 1
                         i > n && invalid_escape(s)
-                        b = codeunit(s, i)
+                        b = unsafe_load(src, i)
                         c2 = (c2 << 4) + charvalue(b)
                         i += 1
                         i > n && invalid_escape(s)
-                        b = codeunit(s, i)
+                        b = unsafe_load(src, i)
                         c2 = (c2 << 4) + charvalue(b)
                         ch = utf16_get_supplementary(c, c2)
                     else
@@ -115,7 +134,7 @@ function unescape(s)
                     end
                     st = codeunits(Base.string(ch))
                     for j = 1:length(st)-1
-                        @inbounds buf[len] = st[j]
+                        unsafe_store!(dst, st[j], len)
                         len += 1
                     end
                     b = st[end]
@@ -124,11 +143,10 @@ function unescape(s)
                     b == 0x00 && invalid_escape(s)
                 end
             end
-            @inbounds buf[len] = b
+            unsafe_store!(dst, b, len)
             len += 1
             i += 1
         end
     end
-    resize!(buf, len - 1)
-    return Base.String(buf)
+    return len-1
 end

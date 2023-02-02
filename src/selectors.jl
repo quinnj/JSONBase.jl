@@ -50,9 +50,11 @@ eq(x::Symbol, y::AbstractString) = isequal(String(x), y)
 eq(x::AbstractString, y::Symbol) = isequal(x, String(y))
 
 function _getindex(::ObjectOrArrayLike, x, key::Union{KeyInd, Integer})
-    return foreach(x) do k, v
+    ret = foreach(x) do k, v
         return eq(k, key) ? v : Continue()
     end
+    ret isa Continue && throw(KeyError(key))
+    return ret
 end
 
 function _getindex(::ArrayLike, x, key::KeyInd)
