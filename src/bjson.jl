@@ -48,7 +48,7 @@ function BJSONMeta(type::BJSONType.T, size::SizeMeta=SizeMeta(true))
 end
 
 function reallocate!(x::LazyValue, tape, i)
-    println("reallocating...")
+    # println("reallocating...")
     len = getlength(getbuf(x))
     pos = getpos(x)
     tape_len = ceil(Int, ((len * i) ÷ pos) * 1.05)
