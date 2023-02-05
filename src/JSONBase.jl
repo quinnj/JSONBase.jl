@@ -11,6 +11,8 @@ gettype(x) = getfield(x, :type)
 pass(args...) = nothing
 
 include("utils.jl")
+include("interfaces.jl")
+using .API
 include("selectors.jl")
 using .Selectors
 
@@ -110,3 +112,5 @@ end # module
 #TODO
  # JSONBase.tostruct that works on LazyValue, or BSONValue
  # make single skip(x::LazyValue) function; make sure perf matches current skipobject/skiparray implementations
+ # support jsonlines
+ # support NaN/Inf?

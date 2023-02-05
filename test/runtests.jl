@@ -109,6 +109,28 @@ end
     @test x[] == Dict{String, Any}("category" => "reference", "author" => "Nigel Rees", "title" => "Sayings of the Century", "price" => 8.95)
 end
 
+@testset "General JSON" begin
+    @testset "errors" for f in (JSONBase.tolazy, JSONBase.tobjson)
+        # Unexpected character in array
+        @test_throws ArgumentError f("[1,2,3/4,5,6,7]")[]
+        # Unexpected character in object
+        @test_throws ArgumentError f("{\"1\":2, \"2\":3 _ \"4\":5}")[]
+        # Invalid escaped character
+        @test_throws ArgumentError f("[\"alpha\\α\"]")[]
+        # Invalid 'simple' and 'unknown value'
+        @test_throws ArgumentError f("[tXXe]")[]
+        @test_throws ArgumentError f("[fail]")[]
+        @test_throws ArgumentError f("∞")[]
+        # Invalid number
+        @test_throws ArgumentError f("[5,2,-]")[]
+        @test_throws ArgumentError f("[5,2,+β]")[]
+        # Incomplete escape
+        @test_throws ArgumentError f("\"\\")[]
+        @test_throws ArgumentError f("[\"🍕\"_\"🍕\"")[]
+    end # @testset "errors"
+
+end
+
 @testset "JSONBase.Selectors" begin
     # lazy indexing selection support
     # examples from https://support.smartbear.com/alertsite/docs/monitors/api/endpoint/jsonpath.html

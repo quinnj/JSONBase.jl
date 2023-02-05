@@ -10,17 +10,17 @@
     pos += 1
     @nextbyte
     if b == UInt8(']')
-        return Selectors.Continue(pos + 1)
+        return API.Continue(pos + 1)
     end
     i = 1
     while true
         # we're now positioned at the start of the value
         ret = keyvalfunc(i, tolazy(buf, pos, len, b))
-        ret isa Selectors.Continue || return ret
+        ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(buf, pos, len) : ret.pos
         @nextbyte
         if b == UInt8(']')
-            return Selectors.Continue(pos + 1)
+            return API.Continue(pos + 1)
         elseif b != UInt8(',')
             error = ExpectedComma
             @goto invalid
@@ -47,10 +47,10 @@ end
     for i = 1:nfields
         b = BJSONValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(i, b)
-        ret isa Selectors.Continue || return ret
+        ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(b) : ret.pos
     end
-    return Selectors.Continue(pos)
+    return API.Continue(pos)
 end
 
 struct GenericArrayClosure
@@ -59,7 +59,7 @@ end
 
 @inline function (f::GenericArrayClosure)(i, val)
     pos = _togeneric(val, x -> push!(f.arr, x))
-    return Selectors.Continue(pos)
+    return API.Continue(pos)
 end
 
 function skiparray(buf, pos, len, b)

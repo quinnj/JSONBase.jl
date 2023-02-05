@@ -10,7 +10,7 @@
     pos += 1
     @nextbyte
     if b == UInt8('}')
-        return Selectors.Continue(pos + 1)
+        return API.Continue(pos + 1)
     end
     while true
         key, pos = parsestring(buf, pos, len, b)
@@ -23,11 +23,11 @@
         @nextbyte
         # we're now positioned at the start of the value
         ret = keyvalfunc(key, tolazy(buf, pos, len, b))
-        ret isa Selectors.Continue || return ret
+        ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(buf, pos, len) : ret.pos
         @nextbyte
         if b == UInt8('}')
-            return Selectors.Continue(pos + 1)
+            return API.Continue(pos + 1)
         elseif b != UInt8(',')
             error = ExpectedComma
             @goto invalid
@@ -53,10 +53,10 @@ end
         key, pos = parsestring(BJSONValue(tape, pos, BJSONType.STRING))
         b = BJSONValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(key, b)
-        ret isa Selectors.Continue || return ret
+        ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(b) : ret.pos
     end
-    return Selectors.Continue(pos)
+    return API.Continue(pos)
 end
 
 struct GenericObjectClosure
@@ -65,7 +65,7 @@ end
 
 @inline function (f::GenericObjectClosure)(key, val)
     pos = _togeneric(val, x -> f.dict[tostring(key)] = x)
-    return Selectors.Continue(pos)
+    return API.Continue(pos)
 end
 
 function skipobject(buf, pos, len, b)

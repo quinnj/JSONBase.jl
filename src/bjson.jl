@@ -48,6 +48,7 @@ function BJSONMeta(type::BJSONType.T, size::SizeMeta=SizeMeta(true))
 end
 
 function reallocate!(x::LazyValue, tape, i)
+    println("reallocating...")
     len = getlength(getbuf(x))
     pos = getpos(x)
     tape_len = ceil(Int, ((len * i) ÷ pos) * 1.05)
@@ -295,7 +296,7 @@ function __readnumber(tape, i, ::Type{T}) where {T}
     return unsafe_load(ptr)
 end
 
-function Selectors.foreach(f, x::BJSONValue)
+function API.foreach(f, x::BJSONValue)
     T = gettype(x)
     if T == BJSONType.OBJECT
         return parseobject(x, keyvaltostring(f))

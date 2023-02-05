@@ -58,7 +58,7 @@ charvalue(b) = (UInt8('0') <= b <= UInt8('9')) ? b - UInt8('0') :
                (UInt8('A') <= b <= UInt8('F')) ? b - (UInt8('A') - 0x0a) :
                throw(ArgumentError("JSON invalid unicode hex value"))
 
-@noinline invalid_escape(str) = throw(ArgumentError("encountered invalid escape character in json string: \"$(Base.String(str))\""))
+@noinline invalid_escape(src, n) = throw(ArgumentError("encountered invalid escape character in json string: \"$(unsafe_string(src, n))\""))
 @noinline unescaped_control(b) = throw(ArgumentError("encountered unescaped control character in json: '$(escape_string(Base.string(Char(b))))'"))
 
 _unsafe_string(p, len) = ccall(:jl_pchar_to_string, Ref{Base.String}, (Ptr{UInt8}, Int), p, len)
@@ -90,42 +90,42 @@ function unsafe_unescape_to_buffer(src::Ptr{UInt8}, n::Int, dst::Ptr{UInt8})
             b = unsafe_load(src, i)
             if b == UInt8('\\')
                 i += 1
-                i > n && invalid_escape(s)
+                i > n && invalid_escape(src, n)
                 b = unsafe_load(src, i)
                 if b == UInt8('u')
                     c = 0x0000
                     i += 1
-                    i > n && invalid_escape(s)
+                    i > n && invalid_escape(src, n)
                     b = unsafe_load(src, i)
                     c = (c << 4) + charvalue(b)
                     i += 1
-                    i > n && invalid_escape(s)
+                    i > n && invalid_escape(src, n)
                     b = unsafe_load(src, i)
                     c = (c << 4) + charvalue(b)
                     i += 1
-                    i > n && invalid_escape(s)
+                    i > n && invalid_escape(src, n)
                     b = unsafe_load(src, i)
                     c = (c << 4) + charvalue(b)
                     i += 1
-                    i > n && invalid_escape(s)
+                    i > n && invalid_escape(src, n)
                     b = unsafe_load(src, i)
                     c = (c << 4) + charvalue(b)
                     if utf16_is_surrogate(c)
                         i += 3
-                        i > n && invalid_escape(s)
+                        i > n && invalid_escape(src, n)
                         c2 = 0x0000
                         b = unsafe_load(src, i)
                         c2 = (c2 << 4) + charvalue(b)
                         i += 1
-                        i > n && invalid_escape(s)
+                        i > n && invalid_escape(src, n)
                         b = unsafe_load(src, i)
                         c2 = (c2 << 4) + charvalue(b)
                         i += 1
-                        i > n && invalid_escape(s)
+                        i > n && invalid_escape(src, n)
                         b = unsafe_load(src, i)
                         c2 = (c2 << 4) + charvalue(b)
                         i += 1
-                        i > n && invalid_escape(s)
+                        i > n && invalid_escape(src, n)
                         b = unsafe_load(src, i)
                         c2 = (c2 << 4) + charvalue(b)
                         ch = utf16_get_supplementary(c, c2)
@@ -140,7 +140,7 @@ function unsafe_unescape_to_buffer(src::Ptr{UInt8}, n::Int, dst::Ptr{UInt8})
                     b = st[end]
                 else
                     b = reverseescapechar(b)
-                    b == 0x00 && invalid_escape(s)
+                    b == 0x00 && invalid_escape(src, n)
                 end
             end
             unsafe_store!(dst, b, len)

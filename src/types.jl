@@ -32,8 +32,8 @@ function Base.show(io::IO, x::LazyValue)
     print(io, "JSONBase.LazyValue(", gettype(x), ")")
 end
 
-Selectors.SelectorType(x::LazyValue) = gettype(x) == JSONType.OBJECT ? Selectors.ObjectLike() :
-    gettype(x) == JSONType.ARRAY ? Selectors.ArrayLike() : nothing
+API.JSONLike(x::LazyValue) = gettype(x) == JSONType.OBJECT ? API.ObjectLike() :
+    gettype(x) == JSONType.ARRAY ? API.ArrayLike() : nothing
 Selectors.@selectors LazyValue
 
 # BJSONValue
@@ -69,10 +69,10 @@ struct BJSONValue
     type::BJSONType.T
 end
 
-function Selectors.SelectorType(x::BJSONValue)
+function API.JSONLike(x::BJSONValue)
     T = gettype(x)
-    return T == BJSONType.OBJECT ? Selectors.ObjectLike() :
-        T == BJSONType.ARRAY ? Selectors.ArrayLike() : nothing
+    return T == BJSONType.OBJECT ? API.ObjectLike() :
+        T == BJSONType.ARRAY ? API.ArrayLike() : nothing
 end
 Selectors.@selectors BJSONValue
 

@@ -48,7 +48,7 @@ end
 
 keyvaltostring(f) = (k, v) -> f(tostring(k), v)
 
-function Selectors.foreach(f, x::LazyValue)
+function API.foreach(f, x::LazyValue)
     if gettype(x) == JSONType.OBJECT
         return parseobject(x, keyvaltostring(f))
     elseif gettype(x) == JSONType.ARRAY

@@ -1,18 +1,8 @@
 module Selectors
 
+import ..API: foreach, Continue, JSONLike, ObjectLike, ArrayLike, ObjectOrArrayLike
+
 export List
-
-function foreach end
-struct ObjectLike end
-struct ArrayLike end
-const ObjectOrArrayLike = Union{ObjectLike, ArrayLike}
-SelectorType(x) = nothing
-
-struct Continue
-    pos::Int
-end
-
-Continue() = Continue(0)
 
 struct List{T} <: AbstractVector{T}
     items::Vector{T}
@@ -21,23 +11,24 @@ end
 items(x::List) = getfield(x, :items)
 Base.getindex(x::List) = map(getindex, items(x))
 List(T=Any) = List(T[])
-List(T, n) = List(Vector{T}(undef, n))
-List(n::Integer) = List(Any, n)
 Base.size(x::List) = size(items(x))
 Base.eltype(::List{T}) where {T} = T
 Base.isassigned(x::List, args::Integer...) = isassigned(items(x), args...)
-Base.setindex!(x::List, item, i::Int) = setindex!(items(x), item, i)
 
 Base.push!(x::List, item) = push!(items(x), item)
 Base.append!(x::List, items_to_append) = append!(items(x), items_to_append)
 
-SelectorType(::List) = ArrayLike()
-function foreach(f, items::List)
-    for (i, x) in enumerate(getfield(items, :items))
-        ret = f(i, x)
+JSONLike(::List) = ArrayLike()
+
+function foreach(f, x::List)
+    # note that there should *never* be #undef
+    # values in a list, since we only ever initialize
+    # one empty, then push!/append! to it
+    for (i, v) in enumerate(items(x))
+        ret = f(i, v)
         ret isa Continue || return ret
     end
-    return
+    return Continue()
 end
 
 const KeyInd = Union{AbstractString, Symbol}
@@ -60,7 +51,7 @@ end
 function _getindex(::ArrayLike, x, key::KeyInd)
     values = List()
     foreach(x) do _, item
-        ST = SelectorType(item)
+        ST = JSONLike(item)
         if ST === ObjectLike()
             ret = _getindex(ST, item, key)
             if ret isa List
@@ -109,7 +100,7 @@ end
 function _getindex(::ObjectLike, x, ::typeof(~), key::Union{KeyInd, Colon})
     values = List()
     foreach(x) do k, v
-        ST = SelectorType(v)
+        ST = JSONLike(v)
         if key === Colon()
             push!(values, v)
         elseif eq(k, key)
@@ -137,7 +128,7 @@ end
 function _getindex(::ArrayLike, x, ::typeof(~), key::Union{KeyInd, Colon})
     values = List()
     foreach(x) do _, item
-        ST = SelectorType(item)
+        ST = JSONLike(item)
         if ST === ObjectLike()
             ret = _getindex(ObjectLike(), item, ~, key)
             append!(values, ret)
@@ -154,10 +145,10 @@ _getindex(::Nothing, args...) = throw(ArgumentError("Selection syntax not define
 
 macro selectors(T)
     esc(quote
-        Base.getindex(x::$T, arg) = Selectors._getindex(Selectors.SelectorType(x), x, arg)
-        Base.getindex(x::$T, ::Colon, arg) = Selectors._getindex(Selectors.SelectorType(x), x, :, arg)
-        Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(Selectors.SelectorType(x), x, ~, arg)
-        Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(Selectors.SelectorType(x), x, key)
+        Base.getindex(x::$T, arg) = Selectors._getindex(Selectors.JSONLike(x), x, arg)
+        Base.getindex(x::$T, ::Colon, arg) = Selectors._getindex(Selectors.JSONLike(x), x, :, arg)
+        Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(Selectors.JSONLike(x), x, ~, arg)
+        Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(Selectors.JSONLike(x), x, key)
     end)
 end
 
