@@ -8,13 +8,13 @@ end
 
 Continue() = Continue(0)
 
-abstract type JSONLike end
+abstract type JSONType end
 
-struct ObjectLike <: JSONLike end
-struct ArrayLike <: JSONLike end
+struct ObjectLike <: JSONType end
+struct ArrayLike <: JSONType end
 const ObjectOrArrayLike = Union{ObjectLike, ArrayLike}
 
-JSONLike(::Union{AbstractArray, AbstractSet, Tuple}) = ArrayLike()
+JSONType(::Union{AbstractArray, AbstractSet, Tuple}) = ArrayLike()
 
 function foreach(f, x::AbstractArray)
     for i in eachindex(x)
@@ -38,7 +38,7 @@ function foreach(f, x::AbstractSet)
     return Continue()
 end
 
-JSONLike(_) = ObjectLike()
+JSONType(_) = ObjectLike()
 
 # generic definition for Tuple, NamedTuple, structs
 function foreach(f, x::T) where {T}

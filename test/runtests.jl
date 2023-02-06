@@ -6,18 +6,18 @@ using Test, JSONBase #, BenchmarkTools, JSON
     make(::Type{Vector{UInt8}}, x) = Vector{UInt8}(x)
     make(::Type{IOBuffer}, x) = IOBuffer(x)
     for T in (String, SubString{String}, IOBuffer, Vector{UInt8})
-        @test JSONBase.gettype(JSONBase.tolazy(make(T, "1"))) == JSONBase.JSONType.NUMBER
-        @test JSONBase.gettype(JSONBase.tolazy(make(T, "true"))) == JSONBase.JSONType.TRUE
-        @test JSONBase.gettype(JSONBase.tolazy(make(T, "false"))) == JSONBase.JSONType.FALSE
-        @test JSONBase.gettype(JSONBase.tolazy(make(T, "null"))) == JSONBase.JSONType.NULL
-        @test JSONBase.gettype(JSONBase.tolazy(make(T, "[]"))) == JSONBase.JSONType.ARRAY
-        @test JSONBase.gettype(JSONBase.tolazy(make(T, "{}"))) == JSONBase.JSONType.OBJECT
-        @test JSONBase.gettype(JSONBase.tolazy(make(T, "\"\""))) == JSONBase.JSONType.STRING
+        @test JSONBase.gettype(JSONBase.tolazy(make(T, "1"))) == JSONBase.JSONTypes.NUMBER
+        @test JSONBase.gettype(JSONBase.tolazy(make(T, "true"))) == JSONBase.JSONTypes.TRUE
+        @test JSONBase.gettype(JSONBase.tolazy(make(T, "false"))) == JSONBase.JSONTypes.FALSE
+        @test JSONBase.gettype(JSONBase.tolazy(make(T, "null"))) == JSONBase.JSONTypes.NULL
+        @test JSONBase.gettype(JSONBase.tolazy(make(T, "[]"))) == JSONBase.JSONTypes.ARRAY
+        @test JSONBase.gettype(JSONBase.tolazy(make(T, "{}"))) == JSONBase.JSONTypes.OBJECT
+        @test JSONBase.gettype(JSONBase.tolazy(make(T, "\"\""))) == JSONBase.JSONTypes.STRING
         @test_throws ArgumentError JSONBase.tolazy(make(T, "a"))
     end
     x = JSONBase.togeneric("{}")
     @test isempty(x) && typeof(x) == Dict{String, Any}
-    @test_throws ArgumentError JSONBase.togeneric(JSONBase.LazyValue(".", 1, JSONBase.JSONType.OBJECT))
+    @test_throws ArgumentError JSONBase.togeneric(JSONBase.LazyValue(".", 1, JSONBase.JSONTypes.OBJECT))
     x = JSONBase.togeneric("{\"a\": 1}")
     @test !isempty(x) && x["a"] == 1 && typeof(x) == Dict{String, Any}
     x = JSONBase.togeneric("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
@@ -83,8 +83,8 @@ end
         @test !em
         @test !sm.is_size_embedded
         @test sm.embedded_size == 0
-        bm = JSONBase.BJSONMeta(JSONBase.BJSONType.OBJECT)
-        @test bm.type == JSONBase.BJSONType.OBJECT
+        bm = JSONBase.BJSONMeta(JSONBase.JSONTypes.OBJECT)
+        @test bm.type == JSONBase.JSONTypes.OBJECT
         @test bm.size.is_size_embedded
     end
 

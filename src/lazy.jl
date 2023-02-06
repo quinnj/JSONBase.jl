@@ -1,3 +1,5 @@
+tolazy(io::Union{IO, Base.AbstractCmd}; kw...) = tolazy(Base.read(io); kw...)
+
 function tolazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
     len = getlength(buf)
     if len == 0
@@ -13,31 +15,47 @@ function tolazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
     invalid(error, buf, pos, Any)
 end
 
+struct LazyValue{T}
+    buf::T
+    pos::Int
+    type::JSONTypes.T
+end
+
+function Base.show(io::IO, x::LazyValue)
+    print(io, "JSONBase.LazyValue(", gettype(x), ")")
+end
+
+# TODO: change this to tobjson
+Base.getindex(x::LazyValue) = togeneric(x)
+
+API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? API.ObjectLike() :
+    gettype(x) == JSONTypes.ARRAY ? API.ArrayLike() : nothing
+
 function tolazy(buf, pos, len, b)
     if b == UInt8('{')
-        return LazyValue(buf, pos, JSONType.OBJECT)
+        return LazyValue(buf, pos, JSONTypes.OBJECT)
     elseif b == UInt8('[')
-        return LazyValue(buf, pos, JSONType.ARRAY)
+        return LazyValue(buf, pos, JSONTypes.ARRAY)
     elseif b == UInt8('"')
-        return LazyValue(buf, pos, JSONType.STRING)
+        return LazyValue(buf, pos, JSONTypes.STRING)
     elseif b == UInt8('n') && pos + 3 <= len &&
         getbyte(buf,pos + 1) == UInt8('u') &&
         getbyte(buf,pos + 2) == UInt8('l') &&
         getbyte(buf,pos + 3) == UInt8('l')
-        return LazyValue(buf, pos, JSONType.NULL)
+        return LazyValue(buf, pos, JSONTypes.NULL)
     elseif b == UInt8('t') && pos + 3 <= len &&
         getbyte(buf,pos + 1) == UInt8('r') &&
         getbyte(buf,pos + 2) == UInt8('u') &&
         getbyte(buf,pos + 3) == UInt8('e')
-        return LazyValue(buf, pos, JSONType.TRUE)
+        return LazyValue(buf, pos, JSONTypes.TRUE)
     elseif b == UInt8('f') && pos + 4 <= len &&
         getbyte(buf,pos + 1) == UInt8('a') &&
         getbyte(buf,pos + 2) == UInt8('l') &&
         getbyte(buf,pos + 3) == UInt8('s') &&
         getbyte(buf,pos + 4) == UInt8('e')
-        return LazyValue(buf, pos, JSONType.FALSE)
+        return LazyValue(buf, pos, JSONTypes.FALSE)
     elseif b == UInt8('-') || (UInt8('0') <= b <= UInt8('9'))
-        return LazyValue(buf, pos, JSONType.NUMBER)
+        return LazyValue(buf, pos, JSONTypes.NUMBER)
     else
         error = InvalidJSON
         @goto invalid
@@ -46,45 +64,139 @@ function tolazy(buf, pos, len, b)
     invalid(error, buf, pos, Any)
 end
 
-keyvaltostring(f) = (k, v) -> f(tostring(k), v)
-
-function API.foreach(f, x::LazyValue)
-    if gettype(x) == JSONType.OBJECT
-        return parseobject(x, keyvaltostring(f))
-    elseif gettype(x) == JSONType.ARRAY
-        return parsearray(x, f)
-    else
-        throw(ArgumentError("`$x` is not an object or array and not eligible for selection syntax"))
+@inline function parseobject(x::LazyValue, keyvalfunc::F) where {F}
+    pos = getpos(x)
+    buf = getbuf(x)
+    len = getlength(buf)
+    b = getbyte(buf, pos)
+    if b != UInt8('{')
+        error = ExpectedOpeningObjectChar
+        @goto invalid
     end
+    pos += 1
+    @nextbyte
+    if b == UInt8('}')
+        return API.Continue(pos + 1)
+    end
+    while true
+        key, pos = parsestring(LazyValue(buf, pos, JSONTypes.STRING))
+        @nextbyte
+        if b != UInt8(':')
+            error = ExpectedColon
+            @goto invalid
+        end
+        pos += 1
+        @nextbyte
+        # we're now positioned at the start of the value
+        val = tolazy(buf, pos, len, b)
+        ret = keyvalfunc(key, val)
+        ret isa API.Continue || return ret
+        pos = ret.pos == 0 ? skip(val) : ret.pos
+        @nextbyte
+        if b == UInt8('}')
+            return API.Continue(pos + 1)
+        elseif b != UInt8(',')
+            error = ExpectedComma
+            @goto invalid
+        end
+        pos += 1 # move past ','
+        @nextbyte
+    end
+@label invalid
+    invalid(error, buf, pos, "object")
 end
 
-@inline function _togeneric(x::LazyValue, valfunc::F) where {F}
-    if gettype(x) == JSONType.OBJECT
-        d = Dict{String, Any}()
-        pos = parseobject(x, GenericObjectClosure(d)).pos
-        valfunc(d)
+@inline function parsearray(x::LazyValue, keyvalfunc::F) where {F}
+    pos = getpos(x)
+    buf = getbuf(x)
+    len = getlength(buf)
+    b = getbyte(buf, pos)
+    if b != UInt8('[')
+        error = ExpectedOpeningArrayChar
+        @goto invalid
+    end
+    pos += 1
+    @nextbyte
+    if b == UInt8(']')
+        return API.Continue(pos + 1)
+    end
+    i = 1
+    while true
+        # we're now positioned at the start of the value
+        val = tolazy(buf, pos, len, b)
+        ret = keyvalfunc(i, val)
+        ret isa API.Continue || return ret
+        pos = ret.pos == 0 ? skip(val) : ret.pos
+        @nextbyte
+        if b == UInt8(']')
+            return API.Continue(pos + 1)
+        elseif b != UInt8(',')
+            error = ExpectedComma
+            @goto invalid
+        end
+        i += 1
+        pos += 1 # move past ','
+        @nextbyte
+    end
+
+@label invalid
+    invalid(error, buf, pos, "array")
+end
+
+@inline function parsestring(x::LazyValue)
+    buf, pos = getbuf(x), getpos(x)
+    len, b = getlength(buf), getbyte(buf, pos)
+    if b != UInt8('"')
+        error = ExpectedOpeningQuoteChar
+        @goto invalid
+    end
+    pos += 1
+    spos = pos
+    escaped = false
+    @nextbyte
+    while b != UInt8('"')
+        if b == UInt8('\\')
+            # skip next character
+            escaped = true
+            pos += 2
+        else
+            pos += 1
+        end
+        @nextbyte(false)
+    end
+    return PtrString(pointer(buf, spos), pos - spos, escaped), pos + 1
+
+@label invalid
+    invalid(error, buf, pos, "string")
+end
+
+@inline function parsenumber(x::LazyValue, valfunc::F) where {F}
+    buf, pos = getbuf(x), getpos(x)
+    len = getlength(buf)
+    b = getbyte(buf, pos)
+    pos, code = Parsers.parsenumber(buf, pos, len, b, valfunc)
+    if Parsers.invalid(code)
+        error = InvalidNumber
+        @goto invalid
+    end
+    return pos
+
+@label invalid
+    invalid(error, buf, pos, "$T")
+end
+
+function skip(x::LazyValue)
+    T = gettype(x)
+    if T == JSONTypes.OBJECT
+        return parseobject(x, pass).pos
+    elseif T == JSONTypes.ARRAY
+        return parsearray(x, pass).pos
+    elseif T == JSONTypes.STRING
+        _, pos = parsestring(x)
         return pos
-    elseif gettype(x) == JSONType.ARRAY
-        a = Any[]
-        pos = parsearray(x, GenericArrayClosure(a)).pos
-        valfunc(a)
-        return pos
-    elseif gettype(x) == JSONType.STRING
-        str, pos = parsestring(getbuf(x), getpos(x))
-        valfunc(tostring(str))
-        return pos
-    elseif gettype(x) == JSONType.NUMBER
-        return parsenumber(x, valfunc)
-    elseif gettype(x) == JSONType.NULL
-        valfunc(nothing)
-        return getpos(x) + 4
-    elseif gettype(x) == JSONType.TRUE
-        valfunc(true)
-        return getpos(x) + 4
-    elseif gettype(x) == JSONType.FALSE
-        valfunc(false)
-        return getpos(x) + 5
+    elseif T == JSONTypes.NUMBER
+        return parsenumber(x, pass)
     else
-        error("Invalid JSON type")
+        return _togeneric(x, pass)
     end
 end

@@ -1,51 +1,34 @@
-# only 5 bits, highest bit is whether size is embeded
-primitive type SizeMeta 8 end
-SizeMeta(x::UInt8) = Base.bitcast(SizeMeta, x)
-Base.UInt8(x::SizeMeta) = Base.bitcast(UInt8, x)
-const IS_SIZE_EMBEDDED_MASK = 0b00010000
-const EMBEDDED_SIZE_MASK = 0b00001111
+tobjson(io::Union{IO, Base.AbstractCmd}; kw...) = tobjson(Base.read(io); kw...)
+tobjson(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = tobjson(tolazy(buf; kw...))
 
-function Base.getproperty(x::SizeMeta, nm::Symbol)
-    if nm == :is_size_embedded
-        return (UInt8(x) & IS_SIZE_EMBEDDED_MASK) != 0x00
-    elseif nm == :embedded_size
-        return UInt8(x) & EMBEDDED_SIZE_MASK
-    else
-        throw(ArgumentError("invalid SizeMeta property: $nm"))
-    end
+function tobjson(x::LazyValue)
+    tape = Vector{UInt8}(undef, 64)
+    i = 1
+    pos, i = _tobjson(x, tape, i)
+    resize!(tape, i - 1)
+    return BJSONValue(tape, 1, gettype(tape, 1))
 end
 
-function SizeMeta(is_size_embedded::Bool, embedded_size::UInt8=0x00)
-    if is_size_embedded
-        return SizeMeta(0x10 | (embedded_size & EMBEDDED_SIZE_MASK))
-    else
-        return SizeMeta(0x00 | (embedded_size & EMBEDDED_SIZE_MASK))
-    end
+struct BJSONValue
+    tape::Vector{UInt8}
+    pos::Int
+    type::JSONTypes.T
 end
 
-sizemeta(size::Integer) = size <= EMBEDDED_SIZE_MASK, SizeMeta(size <= EMBEDDED_SIZE_MASK, size % UInt8)
+Base.getindex(x::BJSONValue) = togeneric(x)
 
-# 5 highest bits are SizeMeta, lower 3 are BSONType
-primitive type BJSONMeta 8 end
-BJSONMeta(x::UInt8) = Base.bitcast(BJSONMeta, x)
-Base.UInt8(x::BJSONMeta) = Base.bitcast(UInt8, x)
-
-const TYPE_MASK = 0b00000111
-const SIZE_MASK = 0b11111000
-
-function Base.getproperty(x::BJSONMeta, nm::Symbol)
-    if nm == :type
-        return BJSONType.T(Base.bitcast(UInt8, x) & TYPE_MASK)
-    elseif nm == :size
-        return SizeMeta((Base.bitcast(UInt8, x) & SIZE_MASK) >> 3)
-    else
-        throw(ArgumentError("invalid BJSONMeta property: $nm"))
-    end
+function API.JSONType(x::BJSONValue)
+    T = gettype(x)
+    return T == JSONTypes.OBJECT ? API.ObjectLike() :
+        T == JSONTypes.ARRAY ? API.ArrayLike() : nothing
 end
 
-function BJSONMeta(type::BJSONType.T, size::SizeMeta=SizeMeta(true))
-    return BJSONMeta(UInt8(type) | (UInt8(size) << 3))
+function gettype(tape::Vector{UInt8}, pos::Int)
+    bm = BJSONMeta(getbyte(tape, pos))
+    return bm.type
 end
+
+include("bjsonutils.jl")
 
 function reallocate!(x::LazyValue, tape, i)
     # println("reallocating...")
@@ -75,7 +58,7 @@ end
     i = _tobjson(k, f.tape, f.i, f.x)
     pos, f.i = _tobjson(v, f.tape, i)
     f.nfields += 1
-    return Selectors.Continue(pos)
+    return API.Continue(pos)
 end
 
 mutable struct BJSONArrayClosure
@@ -87,19 +70,7 @@ end
 @inline function (f::BJSONArrayClosure)(_, v)
     pos, f.i = _tobjson(v, f.tape, f.i)
     f.nelems += 1
-    return Selectors.Continue(pos)
-end
-
-struct BJSONStringClosure{T}
-    tape::Vector{UInt8}
-    i::Int
-    newi::Base.RefValue{Int}
-    x::LazyValue{T}
-end
-
-@inline function (f::BJSONStringClosure{T})(str::PtrString) where {T}
-    f.newi[] = unsafe_copyto!(str, f.tape, f.i, f.x)
-    return
+    return API.Continue(pos)
 end
 
 struct BJSONNumberClosure{T}
@@ -115,7 +86,7 @@ end
 end
 
 function _tobjson(x::LazyValue, tape, i)
-    if gettype(x) == JSONType.OBJECT
+    if gettype(x) == JSONTypes.OBJECT
         tape_i = i
         @check 1 + 4 + 4
         # skip past our BJSONMeta tape slot for now
@@ -127,7 +98,7 @@ function _tobjson(x::LazyValue, tape, i)
         # compute SizeMeta, even though we write nfields unconditionally
         _, sm = sizemeta(c.nfields)
         # note: we pre-@checked earlier
-        tape[tape_i] = UInt8(BJSONMeta(BJSONType.OBJECT, sm))
+        tape[tape_i] = UInt8(BJSONMeta(JSONTypes.OBJECT, sm))
         # store total # of bytes
         i = c.i
         nbytes = (i - tape_i) - # total bytes consumed so far
@@ -138,7 +109,7 @@ function _tobjson(x::LazyValue, tape, i)
         # store # of elements
         _writenumber(Int32(c.nfields), tape, tape_i + 5)
         return pos, i
-    elseif gettype(x) == JSONType.ARRAY
+    elseif gettype(x) == JSONTypes.ARRAY
         # skip past our BJSONMeta tape slot for now
         tape_i = i
         @check 1 + 4 + 4
@@ -151,7 +122,7 @@ function _tobjson(x::LazyValue, tape, i)
         # compute SizeMeta, even though we write nelems unconditionally
         _, sm = sizemeta(c.nelems)
         # store eltype in BJSONMeta size or 0x1f if not homogenous
-        tape[tape_i] = UInt8(BJSONMeta(BJSONType.ARRAY, sm))
+        tape[tape_i] = UInt8(BJSONMeta(JSONTypes.ARRAY, sm))
         i = c.i
         nbytes = (i - tape_i) - # total bytes consumed so far
             1 - # for BJSONMeta
@@ -162,35 +133,41 @@ function _tobjson(x::LazyValue, tape, i)
         # store # of elements
         _writenumber(Int32(c.nelems), tape, tape_i + 5)
         return pos, i
-    elseif gettype(x) == JSONType.STRING
-        y, pos = parsestring(getbuf(x), getpos(x))
+    elseif gettype(x) == JSONTypes.STRING
+        y, pos = parsestring(x)
         return pos, _tobjson(y, tape, i, x)
-    elseif gettype(x) == JSONType.NUMBER
+    elseif gettype(x) == JSONTypes.NUMBER
         c = BJSONNumberClosure(tape, i, Ref(0), x)
         pos = parsenumber(x, c)
         return pos, c.newi[]
-    elseif gettype(x) == JSONType.NULL
+    elseif gettype(x) == JSONTypes.NULL
         @check 1
-        tape[i] = UInt8(BJSONMeta(BJSONType.NULL))
+        tape[i] = UInt8(BJSONMeta(JSONTypes.NULL))
         return getpos(x) + 4, i + 1
-    elseif gettype(x) == JSONType.TRUE
+    elseif gettype(x) == JSONTypes.TRUE
         @check 1
-        tape[i] = UInt8(BJSONMeta(BJSONType.TRUE))
+        tape[i] = UInt8(BJSONMeta(JSONTypes.TRUE))
         return getpos(x) + 4, i + 1
-    elseif gettype(x) == JSONType.FALSE
+    elseif gettype(x) == JSONTypes.FALSE
         @check 1
-        tape[i] = UInt8(BJSONMeta(BJSONType.FALSE))
+        tape[i] = UInt8(BJSONMeta(JSONTypes.FALSE))
         return getpos(x) + 5, i + 1
     else
         error("Invalid JSON type")
     end
 end
 
+function embedded_sizemeta(n)
+    es, sm = sizemeta(n)
+    es || throw(ArgumentError("`$x` is too large to encode in BJSON"))
+    return sm
+end
+
 @inline function _tobjson(y::PtrString, tape, i, x)
     n = y.len
     embedded_size, sm = sizemeta(n)
     @check 1 + (embedded_size ? 0 : 4) + n
-    tape[i] = UInt8(BJSONMeta(BJSONType.STRING, sm))
+    tape[i] = UInt8(BJSONMeta(JSONTypes.STRING, sm))
     i += 1
     if !embedded_size
         i = _writenumber(Int32(n), tape, i)
@@ -208,18 +185,12 @@ end
     end
 end
 
-function embedded_sizemeta(n)
-    es, sm = sizemeta(n)
-    es || throw(ArgumentError("`$x` is too large to encode in BJSON"))
-    return sm
-end
-
 # encode numbers in bson tape
 function writenumber(y::T, tape, i, x::LazyValue) where {T <: Number}
     n = sizeof(y)
     sm = embedded_sizemeta(n)
     @check 1 + n
-    tape[i] = UInt8(BJSONMeta(y isa Integer ? BJSONType.INT : BJSONType.FLOAT, sm))
+    tape[i] = UInt8(BJSONMeta(y isa Integer ? JSONTypes.INT : JSONTypes.FLOAT, sm))
     i += 1
     return _writenumber(y, tape, i)
 end
@@ -238,7 +209,7 @@ function writenumber(y::BigInt, tape, i, x::LazyValue)
     n = sizeof(str)
     sm = embedded_sizemeta(n)
     @check 1 + n
-    tape[i] = UInt8(BJSONMeta(BJSONType.INT, sm))
+    tape[i] = UInt8(BJSONMeta(JSONTypes.INT, sm))
     i += 1
     GC.@preserve tape str unsafe_copyto!(pointer(tape, i), pointer(str), n)
     return i + n
@@ -296,47 +267,126 @@ function __readnumber(tape, i, ::Type{T}) where {T}
     return unsafe_load(ptr)
 end
 
-function API.foreach(f, x::BJSONValue)
-    T = gettype(x)
-    if T == BJSONType.OBJECT
-        return parseobject(x, keyvaltostring(f))
-    elseif T == BJSONType.ARRAY
-        return parsearray(x, f)
-    else
-        throw(ArgumentError("`$x` is not an object or array and not eligible for selection syntax"))
+@inline function parseobject(x::BJSONValue, keyvalfunc::F) where {F}
+    tape = gettape(x)
+    pos = getpos(x)
+    bm = BJSONMeta(getbyte(tape, pos))
+    bm.type == JSONTypes.OBJECT || throw(ArgumentError("expected bjson object: `$(bm.type)`"))
+    pos += 1
+    nbytes = _readint(tape, pos, 4)
+    pos += 4
+    nfields = _readint(tape, pos, 4)
+    pos += 4
+    for _ = 1:nfields
+        key, pos = parsestring(BJSONValue(tape, pos, JSONTypes.STRING))
+        b = BJSONValue(tape, pos, gettype(tape, pos))
+        ret = keyvalfunc(key, b)
+        ret isa API.Continue || return ret
+        pos = ret.pos == 0 ? skip(b) : ret.pos
     end
+    return API.Continue(pos)
 end
 
-@inline function _togeneric(x::BJSONValue, valfunc::F) where {F}
-    T = gettype(x)
-    if T == BJSONType.OBJECT
-        d = Dict{String, Any}()
-        pos = parseobject(x, GenericObjectClosure(d)).pos
-        valfunc(d)
-        return pos
-    elseif T == BJSONType.ARRAY
-        a = Any[]
-        pos = parsearray(x, GenericArrayClosure(a)).pos
-        valfunc(a)
-        return pos
-    elseif T == BJSONType.STRING
-        str, pos = parsestring(x)
-        valfunc(tostring(str))
-        return pos
-    elseif T == BJSONType.INT
-        return parseint(x, valfunc)
-    elseif T == BJSONType.FLOAT
-        return parsefloat(x, valfunc)
-    elseif T == BJSONType.NULL
-        valfunc(nothing)
-        return getpos(x) + 1
-    elseif T == BJSONType.TRUE
-        valfunc(true)
-        return getpos(x) + 1
-    elseif T == BJSONType.FALSE
-        valfunc(false)
-        return getpos(x) + 1
+@inline function parsearray(x::BJSONValue, keyvalfunc::F) where {F}
+    tape = gettape(x)
+    pos = getpos(x)
+    bm = BJSONMeta(getbyte(tape, pos))
+    bm.type == JSONTypes.ARRAY || throw(ArgumentError("expected bjson array: `$(bm.type)`"))
+    pos += 1
+    nbytes = _readint(tape, pos, 4)
+    pos += 4
+    nfields = _readint(tape, pos, 4)
+    pos += 4
+    for i = 1:nfields
+        b = BJSONValue(tape, pos, gettype(tape, pos))
+        ret = keyvalfunc(i, b)
+        ret isa API.Continue || return ret
+        pos = ret.pos == 0 ? skip(b) : ret.pos
+    end
+    return API.Continue(pos)
+end
+
+function parsestring(x::BJSONValue)
+    tape = gettape(x)
+    pos = getpos(x)
+    bm = BJSONMeta(getbyte(tape, pos))
+    @assert bm.type == JSONTypes.STRING
+    pos += 1
+    sm = bm.size
+    if sm.is_size_embedded
+        len = sm.embedded_size
     else
-        error("Invalid JSON type")
+        len = _readint(tape, pos, 4)
+        pos += 4
+    end
+    return PtrString(pointer(tape, pos), len, false), pos + len
+end
+
+@inline function parseint(x::BJSONValue, valfunc::F) where {F}
+    tape = gettape(x)
+    pos = getpos(x)
+    bm = BJSONMeta(getbyte(tape, pos))
+    @assert bm.type == JSONTypes.INT
+    pos += 1
+    sm = bm.size
+    @assert sm.is_size_embedded
+    sz = sm.embedded_size
+    if sz == 1
+        valfunc(__readnumber(tape, pos, Int8))
+    elseif sz == 2
+        valfunc(__readnumber(tape, pos, Int16))
+    elseif sz == 4
+        valfunc(__readnumber(tape, pos, Int32))
+    elseif sz == 8
+        valfunc(__readnumber(tape, pos, Int64))
+    elseif sz == 16
+        valfunc(__readnumber(tape, pos, Int128))
+    else
+        # TODO: BigInt
+    end
+    return pos + sz
+end
+
+@inline function parsefloat(x::BJSONValue, valfunc::F) where {F}
+    tape = gettape(x)
+    pos = getpos(x)
+    bm = BJSONMeta(getbyte(tape, pos))
+    @assert bm.type == JSONTypes.FLOAT
+    pos += 1
+    sm = bm.size
+    @assert sm.is_size_embedded
+    sz = sm.embedded_size
+    if sz == 2
+        valfunc(__readnumber(tape, pos, Float16))
+    elseif sz == 4
+        valfunc(__readnumber(tape, pos, Float32))
+    elseif sz == 8
+        valfunc(__readnumber(tape, pos, Float64))
+    else
+        # TODO: BigFloat
+    end
+    return pos + sz
+end
+
+function skip(x::BJSONValue)
+    tape = gettape(x)
+    pos = getpos(x)
+    T = gettype(x)
+    if T == JSONTypes.OBJECT || T == JSONTypes.ARRAY
+        pos += 1
+        nbytes = _readint(tape, pos, 4)
+        return pos + 8 + nbytes
+    elseif T == JSONTypes.STRING
+        sm = BJSONMeta(getbyte(tape, pos)).size
+        pos += 1
+        if sm.is_size_embedded
+            return pos + sm.embedded_size
+        else
+            return pos + 4 + _readint(tape, pos, 4)
+        end
+    else
+        bm = BJSONMeta(getbyte(tape, pos))
+        pos += 1
+        return pos + bm.size.embedded_size
     end
 end

@@ -1,6 +1,6 @@
 module Selectors
 
-import ..API: foreach, Continue, JSONLike, ObjectLike, ArrayLike, ObjectOrArrayLike
+import ..API: foreach, Continue, JSONType, ObjectLike, ArrayLike, ObjectOrArrayLike
 
 export List
 
@@ -18,7 +18,7 @@ Base.isassigned(x::List, args::Integer...) = isassigned(items(x), args...)
 Base.push!(x::List, item) = push!(items(x), item)
 Base.append!(x::List, items_to_append) = append!(items(x), items_to_append)
 
-JSONLike(::List) = ArrayLike()
+JSONType(::List) = ArrayLike()
 
 function foreach(f, x::List)
     # note that there should *never* be #undef
@@ -51,7 +51,7 @@ end
 function _getindex(::ArrayLike, x, key::KeyInd)
     values = List()
     foreach(x) do _, item
-        ST = JSONLike(item)
+        ST = JSONType(item)
         if ST === ObjectLike()
             ret = _getindex(ST, item, key)
             if ret isa List
@@ -100,7 +100,7 @@ end
 function _getindex(::ObjectLike, x, ::typeof(~), key::Union{KeyInd, Colon})
     values = List()
     foreach(x) do k, v
-        ST = JSONLike(v)
+        ST = JSONType(v)
         if key === Colon()
             push!(values, v)
         elseif eq(k, key)
@@ -128,7 +128,7 @@ end
 function _getindex(::ArrayLike, x, ::typeof(~), key::Union{KeyInd, Colon})
     values = List()
     foreach(x) do _, item
-        ST = JSONLike(item)
+        ST = JSONType(item)
         if ST === ObjectLike()
             ret = _getindex(ObjectLike(), item, ~, key)
             append!(values, ret)
@@ -145,10 +145,10 @@ _getindex(::Nothing, args...) = throw(ArgumentError("Selection syntax not define
 
 macro selectors(T)
     esc(quote
-        Base.getindex(x::$T, arg) = Selectors._getindex(Selectors.JSONLike(x), x, arg)
-        Base.getindex(x::$T, ::Colon, arg) = Selectors._getindex(Selectors.JSONLike(x), x, :, arg)
-        Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(Selectors.JSONLike(x), x, ~, arg)
-        Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(Selectors.JSONLike(x), x, key)
+        Base.getindex(x::$T, arg) = Selectors._getindex(Selectors.JSONType(x), x, arg)
+        Base.getindex(x::$T, ::Colon, arg) = Selectors._getindex(Selectors.JSONType(x), x, :, arg)
+        Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(Selectors.JSONType(x), x, ~, arg)
+        Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(Selectors.JSONType(x), x, key)
     end)
 end
 

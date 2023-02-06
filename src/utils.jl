@@ -5,6 +5,34 @@ invalid JSON at byte position $pos while parsing type $T: $error
 $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 """))
 
+# scoped enum
+module JSONTypes
+    primitive type T 8 end
+    T(x::UInt8) = Base.bitcast(T, x)
+    Base.UInt8(x::T) = Base.bitcast(UInt8, x)
+    const NULL = T(0x00)
+    const FALSE = T(0x01)
+    const TRUE = T(0x02)
+    const INT = T(0x03)
+    const FLOAT = T(0x04)
+    const STRING = T(0x05)
+    const ARRAY = T(0x06)
+    const OBJECT = T(0x07)
+    const NUMBER = T(0x08) # only used by LazyValue, BJSONValue uses INT or FLOAT
+    const names = Dict(
+        NULL => "NULL",
+        FALSE => "FALSE",
+        TRUE => "TRUE",
+        INT => "INT",
+        FLOAT => "FLOAT",
+        STRING => "STRING",
+        ARRAY => "ARRAY",
+        OBJECT => "OBJECT",
+        NUMBER => "NUMBER",
+    )
+    Base.show(io::IO, x::T) = print(io, "JSONTypes.", names[x])
+end
+
 getlength(buf::AbstractVector{UInt8}) = length(buf)
 getlength(buf::AbstractString) = sizeof(buf)
 
