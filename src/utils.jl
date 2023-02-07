@@ -5,6 +5,12 @@ invalid JSON at byte position $pos while parsing type $T: $error
 $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 """))
 
+Base.@kwdef struct Options
+    float64::Bool = false
+end
+
+const OPTIONS = Options()
+
 # scoped enum
 module JSONTypes
     primitive type T 8 end

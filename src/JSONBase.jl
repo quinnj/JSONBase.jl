@@ -8,6 +8,7 @@ getbuf(x) = getfield(x, :buf)
 getpos(x) = getfield(x, :pos)
 gettape(x) = getfield(x, :tape)
 gettype(x) = getfield(x, :type)
+getopts(x) = getfield(x, :opts)
 
 include("utils.jl")
 

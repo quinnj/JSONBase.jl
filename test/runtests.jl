@@ -67,6 +67,10 @@ using Test, JSONBase #, BenchmarkTools, JSON
     @test_throws ArgumentError JSONBase.togeneric("nula")
     @test_throws ArgumentError JSONBase.togeneric("nul")
     @test_throws ArgumentError JSONBase.togeneric("trub")
+    # float64 keyword arg
+    @test JSONBase.togeneric("1", float64=true) === 1.0
+    @test JSONBase.togeneric("[1, 2, 3.14, 10]", float64=true) == [1.0, 2.0, 3.14, 10.0]
+    @test JSONBase.togeneric("{\"a\": 1, \"b\": 2.0, \"c\": 3.14, \"d\": 10}", float64=true) == Dict("a" => 1.0, "b" => 2.0, "c" => 3.14, "d" => 10.0)
 end
 
 @testset "BJSONValue" begin

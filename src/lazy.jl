@@ -9,7 +9,7 @@ function tolazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
     end
     pos = 1
     @nextbyte
-    return tolazy(buf, pos, len, b)
+    return tolazy(buf, pos, len, b, Options(; kw...))
 
 @label invalid
     invalid(error, buf, pos, Any)
@@ -19,6 +19,7 @@ struct LazyValue{T}
     buf::T
     pos::Int
     type::JSONTypes.T
+    opts::Options
 end
 
 function Base.show(io::IO, x::LazyValue)
@@ -31,31 +32,31 @@ Base.getindex(x::LazyValue) = togeneric(x)
 API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? API.ObjectLike() :
     gettype(x) == JSONTypes.ARRAY ? API.ArrayLike() : nothing
 
-function tolazy(buf, pos, len, b)
+function tolazy(buf, pos, len, b, opts)
     if b == UInt8('{')
-        return LazyValue(buf, pos, JSONTypes.OBJECT)
+        return LazyValue(buf, pos, JSONTypes.OBJECT, opts)
     elseif b == UInt8('[')
-        return LazyValue(buf, pos, JSONTypes.ARRAY)
+        return LazyValue(buf, pos, JSONTypes.ARRAY, opts)
     elseif b == UInt8('"')
-        return LazyValue(buf, pos, JSONTypes.STRING)
+        return LazyValue(buf, pos, JSONTypes.STRING, opts)
     elseif b == UInt8('n') && pos + 3 <= len &&
         getbyte(buf,pos + 1) == UInt8('u') &&
         getbyte(buf,pos + 2) == UInt8('l') &&
         getbyte(buf,pos + 3) == UInt8('l')
-        return LazyValue(buf, pos, JSONTypes.NULL)
+        return LazyValue(buf, pos, JSONTypes.NULL, opts)
     elseif b == UInt8('t') && pos + 3 <= len &&
         getbyte(buf,pos + 1) == UInt8('r') &&
         getbyte(buf,pos + 2) == UInt8('u') &&
         getbyte(buf,pos + 3) == UInt8('e')
-        return LazyValue(buf, pos, JSONTypes.TRUE)
+        return LazyValue(buf, pos, JSONTypes.TRUE, opts)
     elseif b == UInt8('f') && pos + 4 <= len &&
         getbyte(buf,pos + 1) == UInt8('a') &&
         getbyte(buf,pos + 2) == UInt8('l') &&
         getbyte(buf,pos + 3) == UInt8('s') &&
         getbyte(buf,pos + 4) == UInt8('e')
-        return LazyValue(buf, pos, JSONTypes.FALSE)
+        return LazyValue(buf, pos, JSONTypes.FALSE, opts)
     elseif b == UInt8('-') || (UInt8('0') <= b <= UInt8('9'))
-        return LazyValue(buf, pos, JSONTypes.NUMBER)
+        return LazyValue(buf, pos, JSONTypes.NUMBER, opts)
     else
         error = InvalidJSON
         @goto invalid
@@ -79,7 +80,7 @@ end
         return API.Continue(pos + 1)
     end
     while true
-        key, pos = parsestring(LazyValue(buf, pos, JSONTypes.STRING))
+        key, pos = parsestring(LazyValue(buf, pos, JSONTypes.STRING, getopts(x)))
         @nextbyte
         if b != UInt8(':')
             error = ExpectedColon
@@ -88,7 +89,7 @@ end
         pos += 1
         @nextbyte
         # we're now positioned at the start of the value
-        val = tolazy(buf, pos, len, b)
+        val = tolazy(buf, pos, len, b, getopts(x))
         ret = keyvalfunc(key, val)
         ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(val) : ret.pos
@@ -123,7 +124,7 @@ end
     i = 1
     while true
         # we're now positioned at the start of the value
-        val = tolazy(buf, pos, len, b)
+        val = tolazy(buf, pos, len, b, getopts(x))
         ret = keyvalfunc(i, val)
         ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(val) : ret.pos
@@ -174,10 +175,20 @@ end
     buf, pos = getbuf(x), getpos(x)
     len = getlength(buf)
     b = getbyte(buf, pos)
-    pos, code = Parsers.parsenumber(buf, pos, len, b, valfunc)
-    if Parsers.invalid(code)
-        error = InvalidNumber
-        @goto invalid
+    if getopts(x).float64
+        res = Parsers.xparse2(Float64, buf, pos, len)
+        if Parsers.invalid(res.code)
+            error = InvalidNumber
+            @goto invalid
+        end
+        valfunc(res.val)
+        return pos + res.tlen
+    else
+        pos, code = Parsers.parsenumber(buf, pos, len, b, valfunc)
+        if Parsers.invalid(code)
+            error = InvalidNumber
+            @goto invalid
+        end
     end
     return pos
 
