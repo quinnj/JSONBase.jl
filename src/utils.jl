@@ -114,6 +114,17 @@ function tostring(x::PtrString)
     end
 end
 
+_symbol(ptr, len) = ccall(:jl_symbol_n, Ref{Symbol}, (Ptr{UInt8}, Int), ptr, len)
+Base.Symbol(x::PtrString) = x.escaped ? Symbol(tostring(x)) : _symbol(x.ptr, x.len)
+
+function streq(x::PtrString, y::AbstractString)
+    if x.escaped
+        return isequal(tostring(x), y)
+    else
+        return x.len == sizeof(y) && ccall(:memcmp, Cint, (Ptr{UInt8}, Ptr{UInt8}, Csize_t), x.ptr, pointer(y), x.len) == 0
+    end
+end
+
 # unsafe because we're not checking that src or dst are valid pointers
 # NOR are we checking that up to `n` bytes after dst are also valid to write to
 function unsafe_unescape_to_buffer(src::Ptr{UInt8}, n::Int, dst::Ptr{UInt8})

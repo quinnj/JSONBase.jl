@@ -1,6 +1,8 @@
 module Selectors
 
 import ..API: foreach, Continue, JSONType, ObjectLike, ArrayLike, ObjectOrArrayLike
+import ..PtrString
+import ..streq
 
 export List
 
@@ -39,6 +41,11 @@ eq(x) = y -> eq(x, y)
 eq(x, y) = isequal(x, y)
 eq(x::Symbol, y::AbstractString) = isequal(String(x), y)
 eq(x::AbstractString, y::Symbol) = isequal(x, String(y))
+eq(x::Symbol, y::PtrString) = streq(y, String(x))
+eq(x::PtrString, y::Symbol) = streq(x, String(y))
+eq(x::PtrString, y::PtrString) = streq(x, y)
+eq(x::PtrString, y::AbstractString) = streq(x, y)
+eq(x::AbstractString, y::PtrString) = streq(y, x)
 
 function _getindex(::ObjectOrArrayLike, x, key::Union{KeyInd, Integer})
     ret = foreach(x) do k, v
