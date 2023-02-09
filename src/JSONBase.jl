@@ -23,7 +23,7 @@ using .Selectors
 include("lazy.jl")
 include("bjson.jl")
 include("generic.jl")
-include("tostruct.jl")
+include("struct.jl")
 
 keyvaltostring(f) = (k, v) -> f(tostring(k), v)
 

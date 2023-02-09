@@ -25,7 +25,7 @@ end
     return API.Continue(pos)
 end
 
-@inline function _togeneric(x::LazyValue, valfunc::F) where {F}
+function _togeneric(x::LazyValue, valfunc::F) where {F}
     T = gettype(x)
     if T == JSONTypes.OBJECT
         d = Dict{String, Any}()
@@ -56,7 +56,7 @@ end
     end
 end
 
-@inline function _togeneric(x::BJSONValue, valfunc::F) where {F}
+function _togeneric(x::BJSONValue, valfunc::F) where {F}
     T = gettype(x)
     if T == JSONTypes.OBJECT
         d = Dict{String, Any}()

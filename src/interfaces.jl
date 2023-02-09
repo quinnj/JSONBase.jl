@@ -10,6 +10,8 @@ Continue() = Continue(0)
 
 abstract type JSONType end
 
+JSONType(x::T) where {T} = JSONType(T)
+
 struct ObjectLike <: JSONType end
 struct ArrayLike <: JSONType end
 const ObjectOrArrayLike = Union{ObjectLike, ArrayLike}
@@ -38,7 +40,7 @@ function foreach(f, x::AbstractSet)
     return Continue()
 end
 
-JSONType(_) = ObjectLike()
+JSONType(::Type{T}) where {T} = isstructtype(T) ? ObjectLike() : nothing
 
 # generic definition for Tuple, NamedTuple, structs
 function foreach(f, x::T) where {T}
