@@ -4,7 +4,7 @@ tobjson(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = tobjson(tola
 function tobjson(x::LazyValue)
     tape = Vector{UInt8}(undef, 64)
     i = 1
-    pos, i = _tobjson(x, tape, i)
+    pos, i = tobjson!(x, tape, i)
     resize!(tape, i - 1)
     return BJSONValue(tape, 1, gettype(tape, 1))
 end
@@ -56,7 +56,7 @@ end
 
 @inline function (f::BJSONObjectClosure{T})(k, v) where {T}
     i = _tobjson(k, f.tape, f.i, f.x)
-    pos, f.i = _tobjson(v, f.tape, i)
+    pos, f.i = tobjson!(v, f.tape, i)
     f.nfields += 1
     return API.Continue(pos)
 end
@@ -68,7 +68,7 @@ mutable struct BJSONArrayClosure
 end
 
 @inline function (f::BJSONArrayClosure)(_, v)
-    pos, f.i = _tobjson(v, f.tape, f.i)
+    pos, f.i = tobjson!(v, f.tape, f.i)
     f.nelems += 1
     return API.Continue(pos)
 end
@@ -85,7 +85,7 @@ end
     return
 end
 
-function _tobjson(x::LazyValue, tape, i)
+@inline function tobjson!(x::LazyValue, tape, i)
     if gettype(x) == JSONTypes.OBJECT
         tape_i = i
         @check 1 + 4 + 4

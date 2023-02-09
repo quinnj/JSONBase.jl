@@ -1,3 +1,16 @@
+"""
+    Selection syntax
+
+Special "selection syntax" is provided that allows easy querying of JSON objects and arrays using a syntax similar to XPath or CSS selectors.
+This syntax mainly uses various forms of `getindex` to select elements of an object or array.
+Supported syntax includes:
+  * `x["key"]` / `x.key` / `x[:key]` - select the value associated with the key `"key"` in object `x`
+  * `x[:]` - select all values in object or array `x`, returned as a `Selectors.List`
+  * `x.key` - when `x` is a `List`, select the value for key `key` in each element of the `List`
+  * `x[~, key]` - recursively select all values in object or array `x` that have a key `key`
+  * `x[~, :]` - recursively select all values in object or array `x`, returned as a flattened `List`
+  * `x[:, (k, v) -> Bool]` - apply a key-value function `f` to each key-value/index-value in object or array `x`, and return a `List` of all values for which `f` returns `true`
+"""
 module Selectors
 
 import ..API: foreach, Continue, JSONType, ObjectLike, ArrayLike, ObjectOrArrayLike
@@ -6,6 +19,11 @@ import ..streq
 
 export List
 
+"""
+    List(...)
+
+A custom array wrapper that supports the Selectors selection syntax.
+"""
 struct List{T} <: AbstractVector{T}
     items::Vector{T}
 end

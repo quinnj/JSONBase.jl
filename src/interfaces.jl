@@ -1,7 +1,23 @@
 module API
 
+"""
+    API.foreach(f, x)
+
+A custom `foreach` function that operates specifically on pairs,
+supports short-circuiting, and can return an updated state via `API.Continue`.
+For each key-value or index-value pair in `x`, call `f(k, v)`.
+If `f` doesn't return an `API.Continue` instance, `foreach` should
+return the non-`Continue` value immediately and stop iterating.
+`foreach` should return `API.Continue` once iterating is complete.
+"""
 function foreach end
 
+"""
+    API.Continue(state)
+
+A special sentinel value for use with `API.foreach`, that indicates
+that `foreach` should continue iterating.
+"""
 struct Continue
     pos::Int
 end
@@ -41,6 +57,7 @@ function foreach(f, x::AbstractSet)
 end
 
 JSONType(::Type{T}) where {T} = isstructtype(T) ? ObjectLike() : nothing
+JSONType(::Type{String}) = nothing
 
 # generic definition for Tuple, NamedTuple, structs
 function foreach(f, x::T) where {T}

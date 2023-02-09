@@ -45,10 +45,11 @@ end # module
 #TODO
  # JSONBase.tostruct that works on LazyValue, or BSONValue
  # BigInt/BigFloat
- # tobjson! for reading into pre-allocated tape
  # code comment documentation
  # package docs
  # support jsonlines
+ # tojson
+ # topretty
  # think about JSONBase.toiterable
    # returns an iterator
    # over jsonlines, each iteration is one line

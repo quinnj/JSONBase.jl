@@ -17,7 +17,7 @@ using Test, JSONBase #, BenchmarkTools, JSON
     end
     x = JSONBase.togeneric("{}")
     @test isempty(x) && typeof(x) == Dict{String, Any}
-    @test_throws ArgumentError JSONBase.togeneric(JSONBase.LazyValue(".", 1, JSONBase.JSONTypes.OBJECT))
+    @test_throws ArgumentError JSONBase.togeneric(JSONBase.LazyValue(".", 1, JSONBase.JSONTypes.OBJECT, JSONBase.OPTIONS))
     x = JSONBase.togeneric("{\"a\": 1}")
     @test !isempty(x) && x["a"] == 1 && typeof(x) == Dict{String, Any}
     x = JSONBase.togeneric("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
@@ -132,7 +132,6 @@ end
         @test_throws ArgumentError f("\"\\")[]
         @test_throws ArgumentError f("[\"🍕\"_\"🍕\"")[]
     end # @testset "errors"
-
 end
 
 @testset "JSONBase.Selectors" begin
@@ -197,3 +196,5 @@ end
         @test_throws KeyError x.store.book[100]
     end
 end
+
+include("struct.jl")

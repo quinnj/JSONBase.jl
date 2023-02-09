@@ -14,7 +14,8 @@ struct StructClosure{F}
 end
 
 @inline function (f::StructClosure)(val)
-    return API.Continue(f.valfunc(f.i, f.fname, val))
+    f.valfunc(f.i, f.fname, val)
+    return
 end
 
 @generated function applyfield(::Type{T}, key, val, valfunc) where {T}
@@ -54,16 +55,21 @@ end
 
 defaults(_) = (;)
 
-function _tostruct(x::Union{LazyValue, BJSONValue}, ::Type{T}, valfunc) where {T}
-    N = fieldcount(T)
+@inline function _tostruct(x::Union{LazyValue, BJSONValue}, ::Type{T}, valfunc::F) where {T, F}
+    S = gettype(x)
+    if S == JSONTypes.OBJECT
+        N = fieldcount(T)
+        vec = Vector{Any}(undef, N)
+        c = ToStructClosure{T}(vec)
+        pos = parseobject(x, c).pos
+    else
+        error("not supported: `$S`")
+    end
+    constructor = T <: Tuple ? tuple : T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
     if N == 0
         valfunc(T())
-        return API.Continue()
+        @goto done
     end
-    vec = Vector{Any}(undef, N)
-    c = ToStructClosure{T}(vec)
-    pos = parseobject(x, c)
-    constructor = T <: Tuple ? tuple : T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
     defs = defaults(T)
     Base.@nexprs 32 i -> begin
         if isassigned(vec, i)
@@ -87,7 +93,7 @@ function _tostruct(x::Union{LazyValue, BJSONValue}, ::Type{T}, valfunc) where {T
         end
     end
     valfunc(constructor(x_1, x_2, x_3, x_4, x_5, x_6, x_7, x_8, x_9, x_10, x_11, x_12, x_13, x_14, x_15, x_16,
-             x_17, x_18, x_19, x_20, x_21, x_22, x_23, x_24, x_25, x_26, x_27, x_28, x_29, x_30, x_31, x_32, map(i->isassigned(values, i) ? values[i] : nothing, 33:N)...))
+             x_17, x_18, x_19, x_20, x_21, x_22, x_23, x_24, x_25, x_26, x_27, x_28, x_29, x_30, x_31, x_32, map(i->isassigned(vec, i) ? vec[i] : nothing, 33:N)...))
 @label done
     return pos
 end
