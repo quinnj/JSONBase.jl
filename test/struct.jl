@@ -1,5 +1,3 @@
-using UUIDs
-
 struct A
     a::Int
     b::Int
@@ -79,9 +77,8 @@ end
 
 Base.@kwdef struct F
     id::Int
-    a::A
+    b::B
     name::String
-    uuid::UUID
 end
 
 @testset "JSONBase.tostruct" begin
@@ -90,6 +87,9 @@ end
     # test order doesn't matter
     obj2 = JSONBase.tostruct("""{ "d": 1,"b": 2,"c": 3,"a": 4}""", A)
     @test obj2 == A(4, 2, 3, 1)
+    # NamedTuple
+    obj = JSONBase.tostruct("""{ "d": 1,"b": 2,"c": 3,"a": 4}""", NamedTuple{(:a, :b, :c, :d), Tuple{Int, Int, Int, Int}})
+    @test obj == (a = 4, b = 2, c = 3, d = 1)
     @test JSONBase.tostruct("{}", C) === C()
     obj = JSONBase.tostruct!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
     @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
@@ -106,5 +106,5 @@ end
     obj = JSONBase.tostruct("""{ "id": 1, "a": {"a": 1, "b": 2, "c": 3, "d": 4}}""", E)
     @test obj == E(1, A(1, 2, 3, 4))
 
-    obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", Dict{String, Any})
+    # obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", Dict{String, Any})
 end

@@ -23,6 +23,9 @@ end
     return
 end
 
+_string(x::Symbol) = String(x)
+_string(x) = string(x)
+
 @generated function applyfield(::Type{T}, key, val, valfunc) where {T}
     N = fieldcount(T)
     ex = quote
@@ -31,7 +34,7 @@ end
     for i = 1:N
         fname = fieldname(T, i)
         ftype = fieldtype(T, i)
-        str = String(fname)
+        str = _string(fname)
         pushfirst!(ex.args, quote
             if Selectors.eq(key, $str)
                 type = gettype(val)
@@ -94,7 +97,7 @@ defaults(_) = (;)
             vec = Vector{Any}(undef, N)
             c = ToStructClosure{T}(vec)
             pos = parseobject(x, c).pos
-            constructor = T <: Tuple ? tuple : T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
+            constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
             construct(T, constructor, vec, valfunc)
             return pos
         elseif ST == Mutable()
@@ -104,6 +107,8 @@ defaults(_) = (;)
         else
             error("Unknown struct type: `$(ST)`")
         end
+    elseif S == JSONTypes.ARRAY
+        
     else
         error("not supported: `$S`")
     end

@@ -22,6 +22,8 @@ struct LazyValue{T}
     opts::Options
 end
 
+getlength(x::LazyValue) = getlength(getbuf(x))
+
 function Base.show(io::IO, x::LazyValue)
     print(io, "JSONBase.LazyValue(", gettype(x), ")")
 end
@@ -193,7 +195,7 @@ end
     return pos
 
 @label invalid
-    invalid(error, buf, pos, "$T")
+    invalid(error, buf, pos, "number")
 end
 
 function skip(x::LazyValue)

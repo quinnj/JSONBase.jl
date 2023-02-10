@@ -1,7 +1,28 @@
 togeneric(io::Union{IO, Base.AbstractCmd}; kw...) = togeneric(Base.read(io); kw...)
 togeneric(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = togeneric(tolazy(buf; kw...))
 
-function togeneric(x::Union{LazyValue, BJSONValue})
+function togeneric(x::LazyValue)
+    local y
+    pos = _togeneric(x, _x -> (y = _x))
+    buf = getbuf(x)
+    len = getlength(buf)
+    if getpos(x) == 1
+        if pos <= len
+            b = getbyte(buf, pos)
+            while b == UInt8('\t') || b == UInt8(' ') || b == UInt8('\n') || b == UInt8('\r')
+                pos += 1
+                pos > len && break
+                b = getbyte(buf, pos)
+            end
+        end
+        if (pos - 1) != len
+            invalid(InvalidChar, getbuf(x), pos, Any)
+        end
+    end
+    return y
+end
+
+function togeneric(x::BJSONValue)
     local y
     _togeneric(x, _x -> (y = _x))
     return y
