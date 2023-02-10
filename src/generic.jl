@@ -25,7 +25,7 @@ end
     return API.Continue(pos)
 end
 
-function _togeneric(x::LazyValue, valfunc::F) where {F}
+@inline function _togeneric(x::LazyValue, valfunc::F) where {F}
     T = gettype(x)
     if T == JSONTypes.OBJECT
         d = Dict{String, Any}()
@@ -56,7 +56,7 @@ function _togeneric(x::LazyValue, valfunc::F) where {F}
     end
 end
 
-function _togeneric(x::BJSONValue, valfunc::F) where {F}
+@inline function _togeneric(x::BJSONValue, valfunc::F) where {F}
     T = gettype(x)
     if T == JSONTypes.OBJECT
         d = Dict{String, Any}()
@@ -65,6 +65,7 @@ function _togeneric(x::BJSONValue, valfunc::F) where {F}
         return pos
     elseif T == JSONTypes.ARRAY
         a = Any[]
+        #TODO: should we sizehint! the array here?
         pos = parsearray(x, GenericArrayClosure(a)).pos
         valfunc(a)
         return pos

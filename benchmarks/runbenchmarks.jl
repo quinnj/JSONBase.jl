@@ -38,7 +38,8 @@ json = """
 @btime JSON3.read(json) #   1.521 μs (7 allocations: 5.44 KiB)
 @btime JSONBase.togeneric(json) #   2.736 μs (72 allocations: 4.26 KiB)
 @btime JSONBase.tobjson(json) #   1.479 μs (21 allocations: 1.50 KiB)
-
+x = JSONBase.tobjson(json)
+@btime JSONBase.togeneric($x)
 
 
 # julia> @btime JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
@@ -47,10 +48,6 @@ json = """
 
 # julia> @btime JSONBase.tostruct!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
 #   240.526 ns (1 allocation: 48 bytes)
-# B(1, 2, 3, 4)
-
-# julia> @btime JSONBase.tostruct!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
-#   240.414 ns (1 allocation: 48 bytes)
 # B(1, 2, 3, 4)
 
 # julia> @btime JSONBase.togeneric("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")

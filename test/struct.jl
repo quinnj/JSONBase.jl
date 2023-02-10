@@ -1,3 +1,5 @@
+using UUIDs
+
 struct A
     a::Int
     b::Int
@@ -75,6 +77,13 @@ struct E
     a::A
 end
 
+Base.@kwdef struct F
+    id::Int
+    a::A
+    name::String
+    uuid::UUID
+end
+
 @testset "JSONBase.tostruct" begin
     obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
@@ -96,4 +105,6 @@ end
     @test obj.id == 1 && !isdefined(obj, :name)
     obj = JSONBase.tostruct("""{ "id": 1, "a": {"a": 1, "b": 2, "c": 3, "d": 4}}""", E)
     @test obj == E(1, A(1, 2, 3, 4))
+
+    obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", Dict{String, Any})
 end

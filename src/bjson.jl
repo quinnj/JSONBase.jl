@@ -2,7 +2,7 @@ tobjson(io::Union{IO, Base.AbstractCmd}; kw...) = tobjson(Base.read(io); kw...)
 tobjson(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = tobjson(tolazy(buf; kw...))
 
 function tobjson(x::LazyValue)
-    tape = Vector{UInt8}(undef, 64)
+    tape = Vector{UInt8}(undef, 128)
     i = 1
     pos, i = tobjson!(x, tape, i)
     resize!(tape, i - 1)
@@ -48,9 +48,9 @@ macro check(n)
 end
 
 mutable struct BJSONObjectClosure{T}
-    tape::Vector{UInt8}
+    const tape::Vector{UInt8}
     i::Int
-    x::LazyValue{T}
+    const x::LazyValue{T}
     nfields::Int
 end
 
@@ -62,7 +62,7 @@ end
 end
 
 mutable struct BJSONArrayClosure
-    tape::Vector{UInt8}
+    const tape::Vector{UInt8}
     i::Int
     nelems::Int
 end
@@ -257,13 +257,9 @@ end
 end
 
 # reading
-IntType(n) = n == 1 ? Int8 : n == 2 ? Int16 : n == 4 ? Int32 : n == 8 ? Int64 : n == 16 ? Int128 : error("bad int type size: `$n`")
-FloatType(n) = n == 2 ? Float16 : n == 4 ? Float32 : n == 8 ? Float64 : BigFloat
-_readint(tape, i, n) = __readnumber(tape, i, IntType(n))
-
-function __readnumber(tape, i, ::Type{T}) where {T}
+@inline function __readnumber(tape, i, ::Type{T}) where {T}
     @assert (sizeof(T) + i - 1) <= length(tape)
-    ptr = convert(Ptr{T}, pointer(tape, i))
+    ptr = Base.bitcast(Ptr{T}, pointer(tape, i))
     return unsafe_load(ptr)
 end
 
@@ -273,9 +269,9 @@ end
     bm = BJSONMeta(getbyte(tape, pos))
     bm.type == JSONTypes.OBJECT || throw(ArgumentError("expected bjson object: `$(bm.type)`"))
     pos += 1
-    nbytes = _readint(tape, pos, 4)
+    nbytes = __readnumber(tape, pos, Int32)
     pos += 4
-    nfields = _readint(tape, pos, 4)
+    nfields = __readnumber(tape, pos, Int32)
     pos += 4
     for _ = 1:nfields
         key, pos = parsestring(BJSONValue(tape, pos, JSONTypes.STRING))
@@ -293,9 +289,9 @@ end
     bm = BJSONMeta(getbyte(tape, pos))
     bm.type == JSONTypes.ARRAY || throw(ArgumentError("expected bjson array: `$(bm.type)`"))
     pos += 1
-    nbytes = _readint(tape, pos, 4)
+    nbytes = __readnumber(tape, pos, Int32)
     pos += 4
-    nfields = _readint(tape, pos, 4)
+    nfields = __readnumber(tape, pos, Int32)
     pos += 4
     for i = 1:nfields
         b = BJSONValue(tape, pos, gettype(tape, pos))
@@ -316,7 +312,7 @@ function parsestring(x::BJSONValue)
     if sm.is_size_embedded
         len = sm.embedded_size
     else
-        len = _readint(tape, pos, 4)
+        len = __readnumber(tape, pos, Int32)
         pos += 4
     end
     return PtrString(pointer(tape, pos), len, false), pos + len
@@ -374,7 +370,7 @@ function skip(x::BJSONValue)
     T = gettype(x)
     if T == JSONTypes.OBJECT || T == JSONTypes.ARRAY
         pos += 1
-        nbytes = _readint(tape, pos, 4)
+        nbytes = __readnumber(tape, pos, Int32)
         return pos + 8 + nbytes
     elseif T == JSONTypes.STRING
         sm = BJSONMeta(getbyte(tape, pos)).size
@@ -382,7 +378,7 @@ function skip(x::BJSONValue)
         if sm.is_size_embedded
             return pos + sm.embedded_size
         else
-            return pos + 4 + _readint(tape, pos, 4)
+            return pos + 4 + __readnumber(tape, pos, Int32)
         end
     else
         bm = BJSONMeta(getbyte(tape, pos))
