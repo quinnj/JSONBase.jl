@@ -43,9 +43,11 @@ Selectors.@selectors BJSONValue
 end # module
 
 #TODO
+ # 3-5 common JSON processing tasks/workflows
+   # eventually in docs
+   # use to highlight selection syntax
+   # various conversion functions
  # JSONBase.tostruct that works on LazyValue, or BSONValue
- # BigInt/BigFloat
- # code comment documentation
  # package docs
  # support jsonlines
  # tojson

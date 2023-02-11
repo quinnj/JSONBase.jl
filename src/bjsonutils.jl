@@ -1,4 +1,15 @@
 # only 5 bits, highest bit is whether size is embeded
+# lower 4 bits are size of value
+# not used at all for objects/arrays
+# for strings, if sizeof string is < 16 bytes, then
+# the size is embedded and no Int32 is needed after
+# the BJSONMeta byte
+# for numbers, we encode the # of bytes used for the
+# int/float; BigInt/BigFloat are 0 and have their size stored
+# in an Int8 right after BJSONMeta byte
+# Int128 is store as 15, since that's the max in 4 bits
+# used in conjunction w/ an embedded JSONTypes.T
+# in BJSONMeta for an entire byte of metadata
 primitive type SizeMeta 8 end
 SizeMeta(x::UInt8) = Base.bitcast(SizeMeta, x)
 Base.UInt8(x::SizeMeta) = Base.bitcast(UInt8, x)
@@ -29,7 +40,7 @@ end
 
 sizemeta(size::Integer) = size <= EMBEDDED_SIZE_MASK, SizeMeta(size <= EMBEDDED_SIZE_MASK, size % UInt8)
 
-# 5 highest bits are SizeMeta, lower 3 are BSONType
+# 5 highest bits are SizeMeta, lower 3 are JSONTypes.T
 primitive type BJSONMeta 8 end
 BJSONMeta(x::UInt8) = Base.bitcast(BJSONMeta, x)
 Base.UInt8(x::BJSONMeta) = Base.bitcast(UInt8, x)

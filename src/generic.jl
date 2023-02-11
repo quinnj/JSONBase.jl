@@ -1,3 +1,18 @@
+"""
+    JSONBase.togeneric(json)
+
+Materialize a JSON input (string, vector, stream, LazyValue, BJSONValue, etc.) into a generic
+Julia representation (Dict, Array, etc.). Specifically, the following materializations are used:
+  * JSON object => `Dict{String, Any}`
+  * JSON array => `Vector{Any}`
+  * JSON string => `String`
+  * JSON number => `Int64`, `Int128`, `BigInt`, `Float64`, or `BigFloat`
+  * JSON true => `true`
+  * JSON false => `false`
+  * JSON null => `nothing`
+"""
+function togeneric end
+
 togeneric(io::Union{IO, Base.AbstractCmd}; kw...) = togeneric(Base.read(io); kw...)
 togeneric(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = togeneric(tolazy(buf; kw...))
 
