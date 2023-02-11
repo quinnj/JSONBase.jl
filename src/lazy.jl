@@ -69,7 +69,9 @@ API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? API.ObjectLike() :
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
 function tolazy(buf, pos, len, b, opts)
-    if b == UInt8('{')
+    if opts.jsonlines
+        return LazyValue(buf, pos, JSONTypes.ARRAY, opts)
+    elseif b == UInt8('{')
         return LazyValue(buf, pos, JSONTypes.OBJECT, opts)
     elseif b == UInt8('[')
         return LazyValue(buf, pos, JSONTypes.ARRAY, opts)
@@ -169,33 +171,62 @@ end
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)
+    opts = getopts(x)
+    jsonlines = opts.jsonlines
     b = getbyte(buf, pos)
-    if b != UInt8('[')
-        error = ExpectedOpeningArrayChar
-        @goto invalid
-    end
-    pos += 1
-    @nextbyte
-    if b == UInt8(']')
-        return API.Continue(pos + 1)
+    if !jsonlines
+        if b != UInt8('[')
+            error = ExpectedOpeningArrayChar
+            @goto invalid
+        end
+        pos += 1
+        @nextbyte
+        if b == UInt8(']')
+            return API.Continue(pos + 1)
+        end
+    else
+        opts = withopts(opts, jsonlines=false)
     end
     i = 1
     while true
         # we're now positioned at the start of the value
-        val = tolazy(buf, pos, len, b, getopts(x))
+        val = tolazy(buf, pos, len, b, opts)
         ret = keyvalfunc(i, val)
         ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(val) : ret.pos
-        @nextbyte
-        if b == UInt8(']')
-            return API.Continue(pos + 1)
-        elseif b != UInt8(',')
-            error = ExpectedComma
-            @goto invalid
+        if jsonlines
+            pos > len && return API.Continue(pos)
+            b = getbyte(buf, pos)
+            while b == UInt8(' ') || b == UInt8('\t')
+                pos += 1
+                pos > len && return API.Continue(pos)
+                b = getbyte(buf, pos)
+            end
+            if b == UInt8('\r')
+                pos += 1
+                pos > len && return API.Continue(pos)
+                b = getbyte(buf, pos)
+            end
+            if b == UInt8('\n')
+                pos += 1
+                pos > len && return API.Continue(pos)
+                b = getbyte(buf, pos)
+            else
+                error = ExpectedNewline
+                @goto invalid
+            end
+        else
+            @nextbyte
+            if b == UInt8(']')
+                return API.Continue(pos + 1)
+            elseif b != UInt8(',')
+                error = ExpectedComma
+                @goto invalid
+            end
+            i += 1
+            pos += 1 # move past ','
+            @nextbyte
         end
-        i += 1
-        pos += 1 # move past ','
-        @nextbyte
     end
 
 @label invalid

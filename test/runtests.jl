@@ -71,6 +71,14 @@ using Test, JSONBase #, BenchmarkTools, JSON
     @test JSONBase.togeneric("1", float64=true) === 1.0
     @test JSONBase.togeneric("[1, 2, 3.14, 10]", float64=true) == [1.0, 2.0, 3.14, 10.0]
     @test JSONBase.togeneric("{\"a\": 1, \"b\": 2.0, \"c\": 3.14, \"d\": 10}", float64=true) == Dict("a" => 1.0, "b" => 2.0, "c" => 3.14, "d" => 10.0)
+    # JSONBase.Options
+    opts = JSONBase.Options(jsonlines=true)
+    opts2 = JSONBase.withopts(opts; jsonlines=false)
+    @test !opts2.jsonlines
+    # jsonlines support
+    @test JSONBase.togeneric("1\n2\n3\n4"; jsonlines=true) == [1, 2, 3, 4]
+    @test JSONBase.togeneric("[1]\n[2]\n[3]\n[4]"; jsonlines=true) == [[1], [2], [3], [4]]
+    @test JSONBase.togeneric("{\"a\": 1}\n{\"b\": 2}\n{\"c\": 3}\n{\"d\": 4}"; jsonlines=true) == [Dict("a" => 1), Dict("b" => 2), Dict("c" => 3), Dict("d" => 4)]
 end
 
 @testset "BJSONValue" begin

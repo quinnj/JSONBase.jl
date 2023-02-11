@@ -335,9 +335,9 @@ end
 end
 
 @static if VERSION < v"1.9.0-"
-    const libmpfr = Base.MPFR.libmpfr
-else
     const libmpfr = :libmpfr
+else
+    const libmpfr = Base.MPFR.libmpfr
 end
 
 function writenumber(y::BigFloat, tape, i, x::LazyValue)

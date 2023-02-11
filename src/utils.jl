@@ -7,7 +7,14 @@ $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 
 Base.@kwdef struct Options
     float64::Bool = false
+    jsonlines::Bool = false
 end
+
+withopts(opts; kw...) = Options(;
+    float64 = opts.float64,
+    jsonlines = opts.jsonlines,
+    kw...
+)
 
 const OPTIONS = Options()
 
