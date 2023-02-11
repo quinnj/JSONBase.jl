@@ -5,6 +5,21 @@ function tobjson(x::LazyValue)
     tape = Vector{UInt8}(undef, 128)
     i = 1
     pos, i = tobjson!(x, tape, i)
+    buf = getbuf(x)
+    len = getlength(buf)
+    if getpos(x) == 1
+        if pos <= len
+            b = getbyte(buf, pos)
+            while b == UInt8('\t') || b == UInt8(' ') || b == UInt8('\n') || b == UInt8('\r')
+                pos += 1
+                pos > len && break
+                b = getbyte(buf, pos)
+            end
+        end
+        if (pos - 1) != len
+            invalid(InvalidChar, getbuf(x), pos, Any)
+        end
+    end
     resize!(tape, i - 1)
     return BJSONValue(tape, 1, gettype(tape, 1))
 end
@@ -159,7 +174,7 @@ end
 
 function embedded_sizemeta(n)
     es, sm = sizemeta(n)
-    es || throw(ArgumentError("`$x` is too large to encode in BJSON"))
+    es || throw(ArgumentError("`$n` is too large to encode in BJSON"))
     return sm
 end
 
@@ -188,7 +203,7 @@ end
 # encode numbers in bson tape
 function writenumber(y::T, tape, i, x::LazyValue) where {T <: Number}
     n = sizeof(y)
-    sm = embedded_sizemeta(n)
+    sm = embedded_sizemeta(min(15, n))
     @check 1 + n
     tape[i] = UInt8(BJSONMeta(y isa Integer ? JSONTypes.INT : JSONTypes.FLOAT, sm))
     i += 1
@@ -196,28 +211,69 @@ function writenumber(y::T, tape, i, x::LazyValue) where {T <: Number}
 end
 
 # NOTE! you must pre-@check before calling this
-function _writenumber(x::T, tape, i) where {T <: Number}
-    n = sizeof(x)
+function _writenumber(y::T, tape, i) where {T <: Number}
+    n = sizeof(y)
     ptr = convert(Ptr{T}, pointer(tape, i))
-    unsafe_store!(ptr, x)
+    unsafe_store!(ptr, y)
     return i + n
 end
 
 # use the same strategy as Serialization for BigInt
 function writenumber(y::BigInt, tape, i, x::LazyValue)
+    #TODO: avoid string materialization and write to
+    # tape directly w/ gmp primitives
     str = string(y, base = 62)
     n = sizeof(str)
-    sm = embedded_sizemeta(n)
-    @check 1 + n
+    sm = embedded_sizemeta(0)
+    @check 1 + 1 + n
+    @assert n < 128
     tape[i] = UInt8(BJSONMeta(JSONTypes.INT, sm))
+    i += 1
+    tape[i] = n % Int8
     i += 1
     GC.@preserve tape str unsafe_copyto!(pointer(tape, i), pointer(str), n)
     return i + n
 end
 
+@inline function readnumber(tape, i, ::Type{BigInt})
+    n = tape[i]
+    i += 1
+    @assert (i + n - 1) <= length(tape)
+    #TODO: avoid string materialization and
+    # use gmp primitives to populate a BigInt from pointer(tape, i)
+    str = _unsafe_string(pointer(tape, i), n)
+    i += n
+    return parse(BigInt, str, base = 62), i
+end
+
 function writenumber(y::BigFloat, tape, i, x::LazyValue)
-    #TODO
-    error("Bigfloat not yet supported")
+    # adapted from Base.MPFR.string_mpfr
+    pc = Ref{Ptr{UInt8}}()
+    n = ccall((:mpfr_asprintf, Base.MPFR.libmpfr), Cint,
+              (Ptr{Ptr{UInt8}}, Ptr{UInt8}, Ref{BigFloat}...),
+              pc, "%Re", y)
+    p = pc[]
+    sm = embedded_sizemeta(0)
+    @check 1 + 1 + n
+    @assert n < 128
+    tape[i] = UInt8(BJSONMeta(JSONTypes.FLOAT, sm))
+    i += 1
+    tape[i] = n % Int8
+    i += 1
+    unsafe_copyto!(pointer(tape, i), p, n)
+    ccall((:mpfr_free_str, Base.MPFR.libmpfr), Cvoid, (Ptr{UInt8},), p)
+    return i + n
+end
+
+@inline function readnumber(tape, i, ::Type{BigFloat})
+    n = tape[i]
+    i += 1
+    @assert (i + n - 1) <= length(tape)
+    z = BigFloat()
+    err = ccall((:mpfr_set_str, Base.MPFR.libmpfr), Int32, (Ref{BigFloat}, Cstring, Int32, Base.MPFR.MPFRRoundingMode), z, pointer(tape, i), 0, Base.MPFR.ROUNDING_MODE[])
+    err == 0 || throw(ArgumentError("invalid bjson BigFloat"))
+    i += n
+    return z, i
 end
 
 @inline function _tobjson(y::Integer, tape, i, x::LazyValue, trunc)
@@ -257,7 +313,7 @@ end
 end
 
 # reading
-@inline function __readnumber(tape, i, ::Type{T}) where {T}
+@inline function readnumber(tape, i, ::Type{T}) where {T}
     @assert (sizeof(T) + i - 1) <= length(tape)
     ptr = Base.bitcast(Ptr{T}, pointer(tape, i))
     return unsafe_load(ptr)
@@ -269,9 +325,9 @@ end
     bm = BJSONMeta(getbyte(tape, pos))
     bm.type == JSONTypes.OBJECT || throw(ArgumentError("expected bjson object: `$(bm.type)`"))
     pos += 1
-    nbytes = __readnumber(tape, pos, Int32)
+    nbytes = readnumber(tape, pos, Int32)
     pos += 4
-    nfields = __readnumber(tape, pos, Int32)
+    nfields = readnumber(tape, pos, Int32)
     pos += 4
     for _ = 1:nfields
         key, pos = parsestring(BJSONValue(tape, pos, JSONTypes.STRING))
@@ -289,9 +345,9 @@ end
     bm = BJSONMeta(getbyte(tape, pos))
     bm.type == JSONTypes.ARRAY || throw(ArgumentError("expected bjson array: `$(bm.type)`"))
     pos += 1
-    nbytes = __readnumber(tape, pos, Int32)
+    nbytes = readnumber(tape, pos, Int32)
     pos += 4
-    nfields = __readnumber(tape, pos, Int32)
+    nfields = readnumber(tape, pos, Int32)
     pos += 4
     for i = 1:nfields
         b = BJSONValue(tape, pos, gettype(tape, pos))
@@ -312,7 +368,7 @@ function parsestring(x::BJSONValue)
     if sm.is_size_embedded
         len = sm.embedded_size
     else
-        len = __readnumber(tape, pos, Int32)
+        len = readnumber(tape, pos, Int32)
         pos += 4
     end
     return PtrString(pointer(tape, pos), len, false), pos + len
@@ -328,17 +384,21 @@ end
     @assert sm.is_size_embedded
     sz = sm.embedded_size
     if sz == 1
-        valfunc(__readnumber(tape, pos, Int8))
+        valfunc(Int64(readnumber(tape, pos, Int8)))
     elseif sz == 2
-        valfunc(__readnumber(tape, pos, Int16))
+        valfunc(Int64(readnumber(tape, pos, Int16)))
     elseif sz == 4
-        valfunc(__readnumber(tape, pos, Int32))
+        valfunc(Int64(readnumber(tape, pos, Int32)))
     elseif sz == 8
-        valfunc(__readnumber(tape, pos, Int64))
-    elseif sz == 16
-        valfunc(__readnumber(tape, pos, Int128))
+        valfunc(readnumber(tape, pos, Int64))
+    elseif sz == 15
+        valfunc(readnumber(tape, pos, Int128))
+    elseif sz == 0
+        val, pos = readnumber(tape, pos, BigInt)
+        valfunc(val)
+        return pos
     else
-        # TODO: BigInt
+        throw(ArgumentError("invalid bjson int size: $sz"))
     end
     return pos + sz
 end
@@ -353,13 +413,17 @@ end
     @assert sm.is_size_embedded
     sz = sm.embedded_size
     if sz == 2
-        valfunc(__readnumber(tape, pos, Float16))
+        valfunc(Float64(readnumber(tape, pos, Float16)))
     elseif sz == 4
-        valfunc(__readnumber(tape, pos, Float32))
+        valfunc(Float64(readnumber(tape, pos, Float32)))
     elseif sz == 8
-        valfunc(__readnumber(tape, pos, Float64))
+        valfunc(readnumber(tape, pos, Float64))
+    elseif sz == 0
+        val, pos = readnumber(tape, pos, BigFloat)
+        valfunc(val)
+        return pos
     else
-        # TODO: BigFloat
+        throw(ArgumentError("invalid bjson float size: $sz"))
     end
     return pos + sz
 end
@@ -370,7 +434,7 @@ function skip(x::BJSONValue)
     T = gettype(x)
     if T == JSONTypes.OBJECT || T == JSONTypes.ARRAY
         pos += 1
-        nbytes = __readnumber(tape, pos, Int32)
+        nbytes = readnumber(tape, pos, Int32)
         return pos + 8 + nbytes
     elseif T == JSONTypes.STRING
         sm = BJSONMeta(getbyte(tape, pos)).size
@@ -378,7 +442,7 @@ function skip(x::BJSONValue)
         if sm.is_size_embedded
             return pos + sm.embedded_size
         else
-            return pos + 4 + __readnumber(tape, pos, Int32)
+            return pos + 4 + readnumber(tape, pos, Int32)
         end
     else
         bm = BJSONMeta(getbyte(tape, pos))

@@ -15,6 +15,10 @@ function Base.getproperty(x::SizeMeta, nm::Symbol)
     end
 end
 
+Base.propertynames(::SizeMeta) = (:is_size_embedded, :embedded_size)
+
+Base.show(io::IO, x::SizeMeta) = print(io, "SizeMeta(is_size_embedded=", x.is_size_embedded, ", embedded_size=", Int(x.embedded_size), ")")
+
 function SizeMeta(is_size_embedded::Bool, embedded_size::UInt8=0x00)
     if is_size_embedded
         return SizeMeta(0x10 | (embedded_size & EMBEDDED_SIZE_MASK))
@@ -42,6 +46,10 @@ function Base.getproperty(x::BJSONMeta, nm::Symbol)
         throw(ArgumentError("invalid BJSONMeta property: $nm"))
     end
 end
+
+Base.propertynames(::BJSONMeta) = (:type, :size)
+
+Base.show(io::IO, x::BJSONMeta) = print(io, "BJSONMeta(type=", x.type, ", size=", x.size, ")")
 
 function BJSONMeta(type::JSONTypes.T, size::SizeMeta=SizeMeta(true))
     return BJSONMeta(UInt8(type) | (UInt8(size) << 3))
