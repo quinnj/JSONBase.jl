@@ -63,9 +63,9 @@ macro check(n)
 end
 
 mutable struct BJSONObjectClosure{T}
-    const tape::Vector{UInt8}
+    tape::Vector{UInt8}
     i::Int
-    const x::LazyValue{T}
+    x::LazyValue{T}
     nfields::Int
 end
 
@@ -77,7 +77,7 @@ end
 end
 
 mutable struct BJSONArrayClosure
-    const tape::Vector{UInt8}
+    tape::Vector{UInt8}
     i::Int
     nelems::Int
 end
@@ -220,10 +220,7 @@ end
 
 # use the same strategy as Serialization for BigInt
 function writenumber(y::BigInt, tape, i, x::LazyValue)
-    #TODO: avoid string materialization and write to
-    # tape directly w/ gmp primitives
-    str = string(y, base = 62)
-    n = sizeof(str)
+    n = Base.GMP.MPZ.sizeinbase(y, 62) + 2
     sm = embedded_sizemeta(0)
     @check 1 + 1 + n
     @assert n < 128
@@ -231,7 +228,7 @@ function writenumber(y::BigInt, tape, i, x::LazyValue)
     i += 1
     tape[i] = n % Int8
     i += 1
-    GC.@preserve tape str unsafe_copyto!(pointer(tape, i), pointer(str), n)
+    Base.GMP.MPZ.get_str!(pointer(tape, i), 62, y)
     return i + n
 end
 
@@ -239,19 +236,25 @@ end
     n = tape[i]
     i += 1
     @assert (i + n - 1) <= length(tape)
-    #TODO: avoid string materialization and
-    # use gmp primitives to populate a BigInt from pointer(tape, i)
-    str = _unsafe_string(pointer(tape, i), n)
-    i += n
-    return parse(BigInt, str, base = 62), i
+    x = BigInt()
+    Base.GMP.MPZ.set_str!(x, pointer(tape, i), 62)
+    return x, i + n
+end
+
+@static if VERSION < v"1.9.0-"
+    const libmpfr = Base.MPFR.libmpfr
+else
+    const libmpfr = :libmpfr
 end
 
 function writenumber(y::BigFloat, tape, i, x::LazyValue)
     # adapted from Base.MPFR.string_mpfr
     pc = Ref{Ptr{UInt8}}()
-    n = ccall((:mpfr_asprintf, Base.MPFR.libmpfr), Cint,
+    n = ccall((:mpfr_asprintf, libmpfr), Cint,
               (Ptr{Ptr{UInt8}}, Ptr{UInt8}, Ref{BigFloat}...),
               pc, "%Re", y)
+    @assert n >= 0 "mpfr_asprintf failed"
+    n += 1 # add null terminator
     p = pc[]
     sm = embedded_sizemeta(0)
     @check 1 + 1 + n
@@ -261,7 +264,7 @@ function writenumber(y::BigFloat, tape, i, x::LazyValue)
     tape[i] = n % Int8
     i += 1
     unsafe_copyto!(pointer(tape, i), p, n)
-    ccall((:mpfr_free_str, Base.MPFR.libmpfr), Cvoid, (Ptr{UInt8},), p)
+    ccall((:mpfr_free_str, libmpfr), Cvoid, (Ptr{UInt8},), p)
     return i + n
 end
 
@@ -270,7 +273,7 @@ end
     i += 1
     @assert (i + n - 1) <= length(tape)
     z = BigFloat()
-    err = ccall((:mpfr_set_str, Base.MPFR.libmpfr), Int32, (Ref{BigFloat}, Cstring, Int32, Base.MPFR.MPFRRoundingMode), z, pointer(tape, i), 0, Base.MPFR.ROUNDING_MODE[])
+    err = ccall((:mpfr_set_str, libmpfr), Int32, (Ref{BigFloat}, Cstring, Int32, Base.MPFR.MPFRRoundingMode), z, pointer(tape, i), 0, Base.MPFR.ROUNDING_MODE[])
     err == 0 || throw(ArgumentError("invalid bjson BigFloat"))
     i += n
     return z, i
