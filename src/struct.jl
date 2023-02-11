@@ -40,11 +40,11 @@ _string(x) = string(x)
                 type = gettype(val)
                 if type == JSONTypes.OBJECT
                     c = StructClosure($i, $(Meta.quot(fname)), valfunc)
-                    pos = _tostruct(val, $ftype, c)
+                    pos = @noinline _tostruct(val, $ftype, c)
                     return API.Continue(pos)
                 else
                     c = StructClosure($i, $(Meta.quot(fname)), valfunc)
-                    pos = _togeneric(val, c)
+                    pos = @noinline _togeneric(val, c)
                     return API.Continue(pos)
                 end
             end
@@ -108,7 +108,7 @@ defaults(_) = (;)
             error("Unknown struct type: `$(ST)`")
         end
     elseif S == JSONTypes.ARRAY
-        
+
     else
         error("not supported: `$S`")
     end
