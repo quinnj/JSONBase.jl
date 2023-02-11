@@ -47,11 +47,31 @@ end # module
    # eventually in docs
    # use to highlight selection syntax
    # various conversion functions
+     # working w/ small JSON
+       # convert to Dict
+       # pick 1 or 2 properties out
+       # convert to struct
+     # abstract JSON
+       # use type field to figure out concrete subtype
+       # convert to concrete struct
+     # large jsonlines/object/array production processing
+       # iterate each line: tolazy, tobjson, togeneric
+     # large, deeply nested json structures
+       # use selection syntax to lazily navigate
+       # then tobjson, togeneric, tostruct
+     # how to form json
+       # create Dict/NamedTuple/Array and call tojson
+       # use struct and call tojson
+       # support jsonlines output
  # JSONBase.tostruct that works on LazyValue, or BSONValue
+   # JSONBase.fields overload to give names, types, excludes, defaults, etc.
  # package docs
  # support jsonlines
  # tojson
  # topretty
+ # allow togeneric to return Vector{Pair} for object instead of Dict
+ # checkout JSON5, Amazon Ion?
+ # special-case Matrix when reading/writing?
  # think about JSONBase.toiterable
    # returns an iterator
    # over jsonlines, each iteration is one line

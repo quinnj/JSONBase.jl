@@ -186,7 +186,7 @@ end
         i += 1 + 4 + 4
         # now we can start writing the fields
         c = BJSONObjectClosure(tape, i, x, 0)
-        pos = parseobject(x, c)
+        pos = parseobject(x, c).pos
         # compute SizeMeta, even though we write nfields unconditionally
         _, sm = sizemeta(c.nfields)
         # note: we pre-@checked earlier
