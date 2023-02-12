@@ -17,6 +17,7 @@ materialized via:
 
 Currently supported keyword arguments include:
   * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float
+  * `jsonlines`: 
 """
 function tolazy end
 
@@ -237,7 +238,7 @@ end
 # returns a PtrString and the next position to parse
 # a PtrString is a semi-lazy, internal-only representation
 # that notes whether escape characters were encountered while parsing
-# or not. It allows _togeneric, _tobjson, etc. to deal
+# or not. It allows togeneric, _tobjson, etc. to deal
 # with the string data appropriately without forcing a String allocation
 # should NEVER be visible to users though!
 @inline function parsestring(x::LazyValue)
@@ -300,7 +301,7 @@ end
 # for object/array/number, we pass a no-op keyvalfunc (pass)
 # to parseobject/parsearray/parsenumber
 # for string, we just ignore the returned PtrString
-# and for bool/null, we call _togeneric since it
+# and for bool/null, we call togeneric since it
 # is already efficient for skipping
 function skip(x::LazyValue)
     T = gettype(x)
@@ -314,6 +315,6 @@ function skip(x::LazyValue)
     elseif T == JSONTypes.NUMBER
         return parsenumber(x, pass)
     else
-        return _togeneric(x, pass)
+        return togeneric(pass, x)
     end
 end

@@ -44,7 +44,7 @@ _string(x) = string(x)
                     return API.Continue(pos)
                 else
                     c = StructClosure($i, $(Meta.quot(fname)), valfunc)
-                    pos = @noinline _togeneric(val, c)
+                    pos = @noinline togeneric(c, val)
                     return API.Continue(pos)
                 end
             end

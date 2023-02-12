@@ -10,15 +10,23 @@ Julia representation (Dict, Array, etc.). Specifically, the following materializ
   * JSON true => `true`
   * JSON false => `false`
   * JSON null => `nothing`
+
+Supported keyword arguments include:
+  * `jsonlines`: 
+  * `float64`: 
+  * `objecttype`: 
+  * `arraytype`: 
 """
 function togeneric end
 
 togeneric(io::Union{IO, Base.AbstractCmd}; kw...) = togeneric(Base.read(io); kw...)
-togeneric(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = togeneric(tolazy(buf; kw...))
+togeneric(buf::Union{AbstractVector{UInt8}, AbstractString};
+    objecttype=Dict{String, Any}, arraytype=Vector{Any}, kw...) =
+    togeneric(tolazy(buf; kw...), objecttype, arraytype)
 
-function togeneric(x::LazyValue)
+@inline function togeneric(x::LazyValue; objecttype::Type{O}=Dict{String, Any}, arraytype::Type{A}=Vector{Any}) where {O, A}
     local y
-    pos = _togeneric(x, _x -> (y = _x))
+    pos = togeneric(_x -> (y = _x), x, objecttype, arraytype)
     buf = getbuf(x)
     len = getlength(buf)
     if getpos(x) == 1
@@ -37,40 +45,44 @@ function togeneric(x::LazyValue)
     return y
 end
 
-function togeneric(x::BJSONValue)
+function togeneric(x::BJSONValue; objecttype::Type{O}=Dict{String, Any}, arraytype::Type{A}=Vector{Any}) where {O, A}
     local y
-    _togeneric(x, _x -> (y = _x))
+    togeneric(_x -> (y = _x), x, objecttype, arraytype)
     return y
 end
 
-struct GenericObjectClosure
-    dict::Dict{String, Any}
+struct GenericObjectClosure{O, A}
+    keyvals::O
 end
 
-@inline function (f::GenericObjectClosure)(key, val)
-    pos = _togeneric(val, x -> f.dict[tostring(key)] = x)
+_push!(d::AbstractDict, k, v) = d[k] = v
+_push!(d, k, v) = push!(d, k => v)
+
+@inline function (f::GenericObjectClosure{O, A})(key, val) where {O, A}
+    pos = togeneric(x -> _push!(f.keyvals, tostring(key), x), val, O, A)
     return API.Continue(pos)
 end
 
-struct GenericArrayClosure
-    arr::Vector{Any}
+struct GenericArrayClosure{O, A}
+    arr::A
 end
 
-@inline function (f::GenericArrayClosure)(i, val)
-    pos = _togeneric(val, x -> push!(f.arr, x))
+@inline function (f::GenericArrayClosure{O, A})(i, val) where {O, A}
+    pos = togeneric(x -> push!(f.arr, x), val, O, A)
     return API.Continue(pos)
 end
 
-@inline function _togeneric(x::LazyValue, valfunc::F) where {F}
+function togeneric(valfunc::F, x::LazyValue, objecttype::Type{O}=Dict{String, Any}, arraytype::Type{A}=Vector{Any}) where {F, O, A}
     T = gettype(x)
     if T == JSONTypes.OBJECT
-        d = Dict{String, Any}()
-        pos = parseobject(x, GenericObjectClosure(d)).pos
+        d = objecttype()
+        pos = parseobject(x, GenericObjectClosure{O, A}(d)).pos
         valfunc(d)
         return pos
     elseif T == JSONTypes.ARRAY
-        a = Any[]
-        pos = parsearray(x, GenericArrayClosure(a)).pos
+        a = arraytype(undef, 0)
+        sizehint!(a, 16)
+        pos = parsearray(x, GenericArrayClosure{O, A}(a)).pos
         valfunc(a)
         return pos
     elseif T == JSONTypes.STRING
@@ -92,17 +104,18 @@ end
     end
 end
 
-@inline function _togeneric(x::BJSONValue, valfunc::F) where {F}
+@inline function togeneric(valfunc::F, x::BJSONValue, objecttype::Type{O}=Dict{String, Any}, arraytype::Type{A}=Vector{Any}) where {F, O, A}
     T = gettype(x)
     if T == JSONTypes.OBJECT
-        d = Dict{String, Any}()
-        pos = parseobject(x, GenericObjectClosure(d)).pos
+        d = objecttype()
+        pos = parseobject(x, GenericObjectClosure{O, A}(d)).pos
         valfunc(d)
         return pos
     elseif T == JSONTypes.ARRAY
-        a = Any[]
-        #TODO: should we sizehint! the array here?
-        pos = parsearray(x, GenericArrayClosure(a)).pos
+        a = arraytype(undef, 0)
+        sizehint!(a, 16)
+        #TODO: should we sizehint! the array here w/ actual length from BJSONValue?
+        pos = parsearray(x, GenericArrayClosure{O, A}(a)).pos
         valfunc(a)
         return pos
     elseif T == JSONTypes.STRING

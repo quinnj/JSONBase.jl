@@ -66,7 +66,6 @@ end # module
  # JSONBase.tostruct that works on LazyValue, or BSONValue
    # JSONBase.fields overload to give names, types, excludes, defaults, etc.
  # package docs
- # support jsonlines
  # tojson
  # topretty
  # allow togeneric to return Vector{Pair} for object instead of Dict

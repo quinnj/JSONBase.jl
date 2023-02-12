@@ -76,9 +76,46 @@ using Test, JSONBase #, BenchmarkTools, JSON
     opts2 = JSONBase.withopts(opts; jsonlines=false)
     @test !opts2.jsonlines
     # jsonlines support
+    @test JSONBase.togeneric("1"; jsonlines=true) == [1]
+    @test JSONBase.togeneric("1 \t"; jsonlines=true) == [1]
+    @test JSONBase.togeneric("1 \t\r"; jsonlines=true) == [1]
+    @test JSONBase.togeneric("1 \t\r\n"; jsonlines=true) == [1]
+    @test JSONBase.togeneric("1 \t\r\nnull"; jsonlines=true) == [1, nothing]
+    # missing newline
+    @test_throws ArgumentError JSONBase.togeneric("1 \t\rnull"; jsonlines=true)
+    @test_throws ArgumentError JSONBase.togeneric(""; jsonlines=true)
     @test JSONBase.togeneric("1\n2\n3\n4"; jsonlines=true) == [1, 2, 3, 4]
     @test JSONBase.togeneric("[1]\n[2]\n[3]\n[4]"; jsonlines=true) == [[1], [2], [3], [4]]
     @test JSONBase.togeneric("{\"a\": 1}\n{\"b\": 2}\n{\"c\": 3}\n{\"d\": 4}"; jsonlines=true) == [Dict("a" => 1), Dict("b" => 2), Dict("c" => 3), Dict("d" => 4)]
+    @test JSONBase.togeneric("""
+    ["Name", "Session", "Score", "Completed"]
+    ["Gilbert", "2013", 24, true]
+    ["Alexa", "2013", 29, true]
+    ["May", "2012B", 14, false]
+    ["Deloise", "2012A", 19, true] 
+    """; jsonlines=true, float64=true) ==
+    [["Name", "Session", "Score", "Completed"],
+     ["Gilbert", "2013", 24.0, true],
+     ["Alexa", "2013", 29.0, true],
+     ["May", "2012B", 14.0, false],
+     ["Deloise", "2012A", 19.0, true]]
+    @test JSONBase.togeneric("""
+    {"name": "Gilbert", "wins": [["straight", "7♣"], ["one pair", "10♥"]]}
+    {"name": "Alexa", "wins": [["two pair", "4♠"], ["two pair", "9♠"]]}
+    {"name": "May", "wins": []}
+    {"name": "Deloise", "wins": [["three of a kind", "5♣"]]}
+    """; jsonlines=true) ==
+    [Dict("name" => "Gilbert", "wins" => [["straight", "7♣"], ["one pair", "10♥"]]),
+     Dict("name" => "Alexa", "wins" => [["two pair", "4♠"], ["two pair", "9♠"]]),
+     Dict("name" => "May", "wins" => []),
+     Dict("name" => "Deloise", "wins" => [["three of a kind", "5♣"]])]
+end
+
+@testset "Non-default object/array types" for f in (JSONBase.tolazy, JSONBase.tobjson)
+    @test JSONBase.togeneric(f("[1,2,3]"); arraytype=Vector{Int}) isa Vector{Int}
+    # test objecttype keyword arg
+    @test JSONBase.togeneric(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=Dict{String, Int}) isa Dict{String, Int}
+    @test JSONBase.togeneric(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=Vector{Pair{String, Int}}) isa Vector{Pair{String, Int}}
 end
 
 @testset "BJSONValue" begin
