@@ -13,6 +13,8 @@ mutable struct B
     B() = new()
 end
 
+JSONBase.StructType(::Type{B}) = JSONBase.Mutable()
+
 struct C
 end
 
@@ -77,8 +79,17 @@ end
 
 Base.@kwdef struct F
     id::Int
-    b::B
+    rate::Float64
     name::String
+end
+
+JSONBase.StructType(::Type{F}) = JSONBase.KwDef()
+
+Base.@kwdef struct G
+    id::Int
+    rate::Float64
+    name::String
+    f::F
 end
 
 @testset "JSONBase.tostruct" begin
@@ -93,6 +104,8 @@ end
     @test JSONBase.tostruct("{}", C) === C()
     obj = JSONBase.tostruct!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
     @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
+    obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
+    @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
     obj = JSONBase.tostruct("""{ "a": 1,"b": 2.0,"c": "3"}""", D)
     @test obj == D(1, 2.0, "3")
     obj = JSONBase.tostruct("""{ "x1": "1","x2": "2","x3": "3","x4": "4","x5": "5","x6": "6","x7": "7","x8": "8","x9": "9","x10": "10","x11": "11","x12": "12","x13": "13","x14": "14","x15": "15","x16": "16","x17": "17","x18": "18","x19": "19","x20": "20","x21": "21","x22": "22","x23": "23","x24": "24","x25": "25","x26": "26","x27": "27","x28": "28","x29": "29","x30": "30","x31": "31","x32": "32","x33": "33","x34": "34","x35": "35"}""", LotsOfFields)
@@ -105,6 +118,7 @@ end
     @test obj.id == 1 && !isdefined(obj, :name)
     obj = JSONBase.tostruct("""{ "id": 1, "a": {"a": 1, "b": 2, "c": 3, "d": 4}}""", E)
     @test obj == E(1, A(1, 2, 3, 4))
-
-    # obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", Dict{String, Any})
+    obj = JSONBase.tostruct("""{ "id": 1, "rate": 2.0, "name": "3"}""", F)
+    @test obj == F(1, 2.0, "3")
+    obj = JSONBase.tokwstruct("""{ "id": 1, "rate": 2.0, "name": "3", "f": {"id": 1, "rate": 2.0, "name": "3"}}""", G)
 end

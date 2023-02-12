@@ -3,7 +3,7 @@ tostruct(buf::Union{AbstractVector{UInt8}, AbstractString}, T; kw...) = tostruct
 
 function tostruct(x::Union{LazyValue, BJSONValue}, ::Type{T}) where {T}
     local y
-    _tostruct(x, T, _x -> (y = _x))
+    tostruct(_x -> (y = _x), x, T)
     return y
 end
 
@@ -40,11 +40,11 @@ _string(x) = string(x)
                 type = gettype(val)
                 if type == JSONTypes.OBJECT
                     c = StructClosure($i, $(Meta.quot(fname)), valfunc)
-                    pos = @noinline _tostruct(val, $ftype, c)
+                    pos = tostruct(c, val, $ftype)
                     return API.Continue(pos)
                 else
                     c = StructClosure($i, $(Meta.quot(fname)), valfunc)
-                    pos = @noinline togeneric(c, val)
+                    pos = togeneric(c, val)
                     return API.Continue(pos)
                 end
             end
@@ -88,7 +88,7 @@ end
 
 defaults(_) = (;)
 
-@inline function _tostruct(x::Union{LazyValue, BJSONValue}, ::Type{T}, valfunc::F) where {T, F}
+function tostruct(valfunc::F, x::Union{LazyValue, BJSONValue}, ::Type{T}) where {T, F}
     S = gettype(x)
     ST = StructType(T)
     if S == JSONTypes.OBJECT
@@ -101,9 +101,12 @@ defaults(_) = (;)
             construct(T, constructor, vec, valfunc)
             return pos
         elseif ST == Mutable()
-            error("")
+            y = T()
+            pos = tostruct!(x, y)
+            valfunc(y)
+            return pos
         elseif ST == KwDef()
-            error("")
+            return tokwstruct(valfunc, x, T)
         else
             error("Unknown struct type: `$(ST)`")
         end
@@ -114,10 +117,36 @@ defaults(_) = (;)
     end
 end
 
+struct ToKwStructClosure{T}
+    kws::Vector{Pair{Symbol, Any}}
+end
+
+struct ApplyKw
+    kws::Vector{Pair{Symbol, Any}}
+end
+
+@inline (f::ApplyKw)(i, k, v) = push!(f.kws, k => v)
+
+@inline (f::ToKwStructClosure{T})(key, val) where {T} = applyfield(T, key, val, ApplyKw(f.kws))
+
+tokwstruct(io::Union{IO, Base.AbstractCmd}, y; kw...) = tokwstruct(Base.read(io), y; kw...)
+tokwstruct(buf::Union{AbstractVector{UInt8}, AbstractString}, y; kw...) = tokwstruct(tolazy(buf; kw...), y)
+
 function tokwstruct(x::Union{LazyValue, BJSONValue}, ::Type{T}) where {T}
+    local y
+    tokwstruct(_x -> (y = _x), x, T)
+    return y
+end
+
+function tokwstruct(valfunc::F, x::Union{LazyValue, BJSONValue}, ::Type{T}) where {F, T}
     N = fieldcount(T)
     N == 0 && return T()
-    error("not implemented")
+    kws = Pair{Symbol, Any}[]
+    c = ToKwStructClosure{T}(kws)
+    pos = parseobject(x, c).pos
+    y = T(; kws...)
+    valfunc(y)
+    return pos
 end
 
 # mutable struct
@@ -128,12 +157,21 @@ struct ToMutableStructClosure{T}
     x::T
 end
 
-(f::ToMutableStructClosure{T})(key, val) where {T} = applyfield(T, key, val, (i, k, v) -> setfield!(f.x, k, v))
+struct ApplyMutable{T}
+    x::T
+end
 
-tostruct!(x::Union{LazyValue, BJSONValue}, ::Type{T}) where {T} = tostruct!(x, T())
+@inline (f::ApplyMutable{T})(i, k, v) where {T} = setfield!(f.x, k, v)
+
+(f::ToMutableStructClosure{T})(key, val) where {T} = applyfield(T, key, val, ApplyMutable(f.x))
+
+function tostruct!(x::Union{LazyValue, BJSONValue}, ::Type{T}) where {T}
+    y = T()
+    tostruct!(x, y)
+    return y
+end
 
 function tostruct!(x::Union{LazyValue, BJSONValue}, y::T) where {T}
     c = ToMutableStructClosure{T}(y)
-    pos = parseobject(x, c)
-    return y
+    return parseobject(x, c).pos
 end

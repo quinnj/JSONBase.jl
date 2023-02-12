@@ -22,7 +22,7 @@ function togeneric end
 togeneric(io::Union{IO, Base.AbstractCmd}; kw...) = togeneric(Base.read(io); kw...)
 togeneric(buf::Union{AbstractVector{UInt8}, AbstractString};
     objecttype=Dict{String, Any}, arraytype=Vector{Any}, kw...) =
-    togeneric(tolazy(buf; kw...), objecttype, arraytype)
+    togeneric(tolazy(buf; kw...); objecttype, arraytype)
 
 @inline function togeneric(x::LazyValue; objecttype::Type{O}=Dict{String, Any}, arraytype::Type{A}=Vector{Any}) where {O, A}
     local y
