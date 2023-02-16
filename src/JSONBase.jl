@@ -25,7 +25,7 @@ include("bjson.jl")
 include("generic.jl")
 include("struct.jl")
 
-keyvaltostring(f) = (k, v) -> f(tostring(k), v)
+keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
 function API.foreach(f, x::Union{LazyValue, BJSONValue})
     if gettype(x) == JSONTypes.OBJECT
@@ -56,6 +56,10 @@ end # module
        # convert to concrete struct
      # large jsonlines/object/array production processing
        # iterate each line: tolazy, tobjson, togeneric
+       # start with tolazy, API.foreach on LazyValue
+       # preallocate tape buffer, call tobjson! w/ preallocated buffer
+       # in keyvalfunc to API.foreach,
+       # then call togeneric
      # large, deeply nested json structures
        # use selection syntax to lazily navigate
        # then tobjson, togeneric, tostruct
@@ -68,11 +72,8 @@ end # module
  # package docs
  # tojson
  # topretty
- # allow togeneric to return Vector{Pair} for object instead of Dict
  # checkout JSON5, Amazon Ion?
  # special-case Matrix when reading/writing?
- # think about JSONBase.toiterable
-   # returns an iterator
-   # over jsonlines, each iteration is one line
-   # for array, each iteration is an element
-   # for object, each iteration is a key-value pair
+ # think about JSONBase.walk
+   # pass in keyvalfunc that gets wrapped/passed to API.foreach
+   # then we recursively walk LazyValues

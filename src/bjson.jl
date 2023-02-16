@@ -311,8 +311,9 @@ function writenumber(y::BigInt, tape, i, x::LazyValue)
     n = Base.GMP.MPZ.sizeinbase(y, 62) + 2
     # embedded size is always 0 for BigInt
     sm = embedded_sizemeta(0)
+    # need 1 for meta byte, 1 for size byte, and n for the string
     @check 1 + 1 + n
-    @assert n < 256
+    @assert n < 256 "BigInt too large to encode in BJSON: `$y`"
     # first we store our BJSONMeta byte
     tape[i] = UInt8(BJSONMeta(JSONTypes.INT, sm))
     i += 1
@@ -321,7 +322,7 @@ function writenumber(y::BigInt, tape, i, x::LazyValue)
     # they have a JSON int that needs more than 255 bytes to store
     tape[i] = n % UInt8
     i += 1
-    Base.GMP.MPZ.get_str!(pointer(tape, i), 62, y)
+    GC.@preserve tape y Base.GMP.MPZ.get_str!(pointer(tape, i), 62, y)
     return i + n
 end
 
@@ -330,7 +331,7 @@ end
     i += 1
     @assert (i + n - 1) <= length(tape)
     x = BigInt()
-    Base.GMP.MPZ.set_str!(x, pointer(tape, i), 62)
+    GC.@preserve tape Base.GMP.MPZ.set_str!(x, pointer(tape, i), 62)
     return x, i + n
 end
 
@@ -355,15 +356,16 @@ function writenumber(y::BigFloat, tape, i, x::LazyValue)
     p = pc[]
     # embedded size is always 0 for BigFloat
     sm = embedded_sizemeta(0)
+    # need 1 for meta byte, 1 for size byte, and n for the string
     @check 1 + 1 + n
-    @assert n < 256
+    @assert n < 256 "BigFloat too large to encode in BJSON: `$y`"
     # first we store our BJSONMeta byte
     tape[i] = UInt8(BJSONMeta(JSONTypes.FLOAT, sm))
     i += 1
     # then we store the # of bytes needed to store the BigFloat
     tape[i] = n % UInt8
     i += 1
-    unsafe_copyto!(pointer(tape, i), p, n)
+    GC.@preserve tape unsafe_copyto!(pointer(tape, i), p, n)
     ccall((:mpfr_free_str, libmpfr), Cvoid, (Ptr{UInt8},), p)
     return i + n
 end
@@ -374,7 +376,7 @@ end
     @assert (i + n - 1) <= length(tape)
     z = BigFloat()
     # mpfr library function to read a string into our BigFloat `z` variable
-    err = ccall((:mpfr_set_str, libmpfr), Int32, (Ref{BigFloat}, Cstring, Int32, Base.MPFR.MPFRRoundingMode), z, pointer(tape, i), 0, Base.MPFR.ROUNDING_MODE[])
+    err = GC.@preserve tape ccall((:mpfr_set_str, libmpfr), Int32, (Ref{BigFloat}, Cstring, Int32, Base.MPFR.MPFRRoundingMode), z, pointer(tape, i), 0, Base.MPFR.ROUNDING_MODE[])
     err == 0 || throw(ArgumentError("invalid bjson BigFloat"))
     i += n
     return z, i
@@ -472,7 +474,7 @@ end
 # return a PtrString for an embedded string in bjson format
 # we return a PtrString to allow callers flexibility
 # in how they want to materialize/compare/etc.
-function parsestring(x::BJSONValue)
+@inline function parsestring(x::BJSONValue)
     tape = gettape(x)
     pos = getpos(x)
     bm = BJSONMeta(getbyte(tape, pos))

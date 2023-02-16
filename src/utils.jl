@@ -18,6 +18,27 @@ withopts(opts; kw...) = Options(;
 
 const OPTIONS = Options()
 
+struct Types{O, A, S} end
+
+Types(;
+    objecttype::Type=Dict{String, Any},
+    arraytype::Type=Vector{Any},
+    stringtype::Type=String) = Types{objecttype, arraytype, stringtype}
+
+objecttype(::Type{Types{O, A, S}}) where {O, A, S} = O
+arraytype(::Type{Types{O, A, S}}) where {O, A, S} = A
+stringtype(::Type{Types{O, A, S}}) where {O, A, S} = S
+
+withobjecttype(::Type{Types{O, A, S}}, ::Type{O2}) where {O, A, S, O2} = Types{O2, A, S}
+witharraytype(::Type{Types{O, A, S}}, ::Type{A2}) where {O, A, S, A2} = Types{O, A2, S}
+withstringtype(::Type{Types{O, A, S}}, ::Type{S2}) where {O, A, S, S2} = Types{O, A, S2}
+
+const TYPES = Types()
+
+withobjecttype(::Type{O2}) where {O2} = withobjecttype(TYPES, O2)
+witharraytype(::Type{A2}) where {A2} = witharraytype(TYPES, A2)
+withstringtype(::Type{S2}) where {S2} = withstringtype(TYPES, S2)
+
 # scoped enum
 module JSONTypes
     primitive type T 8 end
@@ -111,7 +132,7 @@ struct PtrString
     escaped::Bool
 end
 
-function tostring(x::PtrString)
+function tostring(::Type{String}, x::PtrString)
     if x.escaped
         str = Base.StringVector(x.len)
         len = GC.@preserve str unsafe_unescape_to_buffer(x.ptr, x.len, pointer(str))
@@ -122,12 +143,24 @@ function tostring(x::PtrString)
     end
 end
 
+# generic fallback
+tostring(::Type{T}, x::PtrString) where {T} = T(tostring(String, x))
+tostring(U::Union, x::PtrString) = convert(U, tostring(String, x))
+
 _symbol(ptr, len) = ccall(:jl_symbol_n, Ref{Symbol}, (Ptr{UInt8}, Int), ptr, len)
-Base.Symbol(x::PtrString) = x.escaped ? Symbol(tostring(x)) : _symbol(x.ptr, x.len)
+Base.Symbol(x::PtrString) = x.escaped ? Symbol(tostring(String, x)) : _symbol(x.ptr, x.len)
+
+function tostring(::Type{T}, x::PtrString) where {T <: Enum}
+    sym = Symbol(x)
+    for (k, v) in Base.Enums.namemap(T)
+        v === sym && return T(k)
+    end
+    throw(ArgumentError("invalid `$T` string value: \"$sym\""))
+end
 
 function streq(x::PtrString, y::AbstractString)
     if x.escaped
-        return isequal(tostring(x), y)
+        return isequal(tostring(String, x), y)
     else
         return x.len == sizeof(y) && ccall(:memcmp, Cint, (Ptr{UInt8}, Ptr{UInt8}, Csize_t), x.ptr, pointer(y), x.len) == 0
     end

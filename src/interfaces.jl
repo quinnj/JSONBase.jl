@@ -32,7 +32,7 @@ struct ObjectLike <: JSONType end
 struct ArrayLike <: JSONType end
 const ObjectOrArrayLike = Union{ObjectLike, ArrayLike}
 
-JSONType(::Union{AbstractArray, AbstractSet, Tuple}) = ArrayLike()
+JSONType(::Type{<:Union{AbstractArray, AbstractSet, Tuple}}) = ArrayLike()
 
 function foreach(f, x::AbstractArray)
     for i in eachindex(x)

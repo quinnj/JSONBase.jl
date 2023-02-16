@@ -1,3 +1,14 @@
+"""
+    JSONBase.tostruct(json, T) -> T
+    JSONBase.tostruct!(json, x)
+    JSONBase.tostruct!(json, T) -> T
+    JSONBase.tokwstruct(json, T) -> T
+
+Materialize a JSON input (string, vector, stream, LazyValue, BJSONValue, etc.) into a struct of
+type `T`.
+"""
+function tostruct end
+
 tostruct(io::Union{IO, Base.AbstractCmd}, T; kw...) = tostruct(Base.read(io), T; kw...)
 tostruct(buf::Union{AbstractVector{UInt8}, AbstractString}, T; kw...) = tostruct(tolazy(buf; kw...), T)
 
@@ -23,9 +34,19 @@ end
     return
 end
 
-_string(x::Symbol) = String(x)
-_string(x) = string(x)
+#TODO: figure out if we should keep this; I don't love it
+dictlike(::Type{<:AbstractDict}) = true
+dictlike(::Type{<:AbstractVector{<:Pair}}) = true
+dictlike(_) = false
 
+# NOTE: care needs to be taken in applyfield to not inline too much,
+# since we're essentially duplicating the inner quote block for each
+# field of struct T
+# applyfield is used by each of tostruct, tokwstruct, and tostruct!
+# it takes a `key` and `val` parsed from json, then compares `key`
+# with field names in `T` and when a match is found, determines how
+# to materialize `val` (either recursively calls tostruct, or togeneric)
+# passing `valfunc` along to be applied to the final materialized value
 @generated function applyfield(::Type{T}, key, val, valfunc) where {T}
     N = fieldcount(T)
     ex = quote
@@ -34,13 +55,30 @@ _string(x) = string(x)
     for i = 1:N
         fname = fieldname(T, i)
         ftype = fieldtype(T, i)
-        str = _string(fname)
+        str = String(fname)
         pushfirst!(ex.args, quote
             if Selectors.eq(key, $str)
                 type = gettype(val)
                 if type == JSONTypes.OBJECT
+                    if $(dictlike(ftype))
+                        c = StructClosure($i, $(Meta.quot(fname)), valfunc)
+                        types = withobjecttype(TYPES, $ftype)
+                        pos = togeneric(c, val, types)
+                        return API.Continue(pos)
+                    else
+                        c = StructClosure($i, $(Meta.quot(fname)), valfunc)
+                        pos = tostruct(c, val, $ftype)
+                        return API.Continue(pos)
+                    end
+                elseif type == JSONTypes.ARRAY
                     c = StructClosure($i, $(Meta.quot(fname)), valfunc)
-                    pos = tostruct(c, val, $ftype)
+                    types = witharraytype(TYPES, $ftype)
+                    pos = togeneric(c, val, types)
+                    return API.Continue(pos)
+                elseif type == JSONTypes.STRING
+                    c = StructClosure($i, $(Meta.quot(fname)), valfunc)
+                    types = withstringtype(TYPES, $ftype)
+                    pos = togeneric(c, val, types)
                     return API.Continue(pos)
                 else
                     c = StructClosure($i, $(Meta.quot(fname)), valfunc)
@@ -111,7 +149,9 @@ function tostruct(valfunc::F, x::Union{LazyValue, BJSONValue}, ::Type{T}) where 
             error("Unknown struct type: `$(ST)`")
         end
     elseif S == JSONTypes.ARRAY
-
+        return togeneric(valfunc, x, witharraytype(TYPES, T))
+    elseif S == JSONTypes.STRING
+        return togeneric(valfunc, x, withstringtype(TYPES, T))
     else
         error("not supported: `$S`")
     end

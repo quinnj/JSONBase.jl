@@ -112,10 +112,10 @@ using Test, JSONBase #, BenchmarkTools, JSON
 end
 
 @testset "Non-default object/array types" for f in (JSONBase.tolazy, JSONBase.tobjson)
-    @test JSONBase.togeneric(f("[1,2,3]"); arraytype=Vector{Int}) isa Vector{Int}
+    @test JSONBase.togeneric(f("[1,2,3]"); types=JSONBase.witharraytype(Vector{Int})) isa Vector{Int}
     # test objecttype keyword arg
-    @test JSONBase.togeneric(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=Dict{String, Int}) isa Dict{String, Int}
-    @test JSONBase.togeneric(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=Vector{Pair{String, Int}}) isa Vector{Pair{String, Int}}
+    @test JSONBase.togeneric(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); types=JSONBase.withobjecttype(Dict{String, Int})) isa Dict{String, Int}
+    @test JSONBase.togeneric(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); types=JSONBase.withobjecttype(Vector{Pair{String, Int}})) isa Vector{Pair{String, Int}}
 end
 
 @testset "BJSONValue" begin

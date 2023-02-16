@@ -92,6 +92,49 @@ Base.@kwdef struct G
     f::F
 end
 
+struct H
+    id::Int
+    name::String
+    properties::Dict{String, Any}
+    addresses::Vector{String}
+end
+
+@enum Fruit apple banana
+
+struct I
+    id::Int
+    name::String
+    fruit::Fruit
+end
+
+abstract type Vehicle end
+
+struct Car <: Vehicle
+    type::String
+    make::String
+    model::String
+    seatingCapacity::Int
+    topSpeed::Float64
+end
+
+struct Truck <: Vehicle
+    type::String
+    make::String
+    model::String
+    payloadCapacity::Float64
+end
+
+struct J
+    id::Union{Int, Nothing}
+    name::Union{String, Nothing}
+    rate::Union{Int, Float64}
+end
+
+struct K
+    id::Int
+    value::Union{Float64, Missing}
+end
+
 @testset "JSONBase.tostruct" begin
     obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
@@ -121,4 +164,22 @@ end
     obj = JSONBase.tostruct("""{ "id": 1, "rate": 2.0, "name": "3"}""", F)
     @test obj == F(1, 2.0, "3")
     obj = JSONBase.tokwstruct("""{ "id": 1, "rate": 2.0, "name": "3", "f": {"id": 1, "rate": 2.0, "name": "3"}}""", G)
+    @test obj == G(1, 2.0, "3", F(1, 2.0, "3"))
+    # Dict/Array fields
+    obj = JSONBase.tostruct("""{ "id": 1, "name": "2", "properties": {"a": 1, "b": 2}, "addresses": ["a", "b"]}""", H)
+    @test obj.id == 1 && obj.name == "2" && obj.properties == Dict("a" => 1, "b" => 2) && obj.addresses == ["a", "b"]
+    # Enum
+    @test JSONBase.tostruct("\"apple\"", Fruit) == apple
+    @test JSONBase.tostruct("""{"id": 1, "name": "2", "fruit": "banana"}  """, I) == I(1, "2", banana)
+    # abstract type
+    x = JSONBase.tolazy("""{"type": "car","make": "Mercedes-Benz","model": "S500","seatingCapacity": 5,"topSpeed": 250.1}""")
+    choose(x) = x.type[] == "car" ? Car : Truck
+    @test JSONBase.tostruct(x, choose(x)) == Car("car", "Mercedes-Benz", "S500", 5, 250.1)
+    x = JSONBase.tolazy("""{"type": "truck","make": "Isuzu","model": "NQR","payloadCapacity": 7500.5}""")
+    @test JSONBase.tostruct(x, choose(x)) == Truck("truck", "Isuzu", "NQR", 7500.5)
+    # union
+    @test JSONBase.tostruct("""{"id": 1, "name": "2", "rate": 3}""", J) == J(1, "2", 3)
+    @test JSONBase.tostruct("""{"id": null, "name": null, "rate": 3.14}""", J) == J(nothing, nothing, 3.14)
+    # test K
+    @test JSONBase.tostruct("""{"id": 1, "value": null}""", K) == K(1, "2", 3.14)
 end
