@@ -3,11 +3,12 @@ uuid = "2e7fc8d9-e5f8-4569-a7b1-cf20c7cf9c71"
 version = "1.0.0"
 
 [deps]
+Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
 Parsers = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
 
 [compat]
-julia = "1.6"
 Parsers = "2.5"
+julia = "1.6"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

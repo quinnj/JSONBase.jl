@@ -5,6 +5,9 @@ invalid JSON at byte position $pos while parsing type $T: $error
 $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 """))
 
+checkfile(buf::AbstractString) = buf isa AbstractString && sizeof(buf) < 256 && isfile(buf) ? Mmap.mmap(buf) : buf
+checkfile(buf) = buf
+
 Base.@kwdef struct Options
     float64::Bool = false
     jsonlines::Bool = false

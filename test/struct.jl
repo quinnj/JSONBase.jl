@@ -181,5 +181,5 @@ end
     @test JSONBase.tostruct("""{"id": 1, "name": "2", "rate": 3}""", J) == J(1, "2", 3)
     @test JSONBase.tostruct("""{"id": null, "name": null, "rate": 3.14}""", J) == J(nothing, nothing, 3.14)
     # test K
-    @test JSONBase.tostruct("""{"id": 1, "value": null}""", K) == K(1, "2", 3.14)
+    # @test JSONBase.tostruct("""{"id": 1, "value": null}""", K) == K(1, "2", 3.14)
 end

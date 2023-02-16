@@ -103,18 +103,18 @@ function togeneric(valfunc::F, x::LazyValue, types::Type{Types{O, A, S}}=TYPES) 
     end
 end
 
-@inline function togeneric(valfunc::F, x::BJSONValue, T::Type{Types{O, A, S}}=TYPES) where {F, O, A, S}
+@inline function togeneric(valfunc::F, x::BJSONValue, types::Type{Types{O, A, S}}=TYPES) where {F, O, A, S}
     T = gettype(x)
     if T == JSONTypes.OBJECT
         d = O()
-        pos = parseobject(x, GenericObjectClosure{O, T}(d)).pos
+        pos = parseobject(x, GenericObjectClosure{O, types}(d)).pos
         valfunc(d)
         return pos
     elseif T == JSONTypes.ARRAY
         a = A(undef, 0)
         sizehint!(a, 16)
         #TODO: should we sizehint! the array here w/ actual length from BJSONValue?
-        pos = parsearray(x, GenericArrayClosure{A, T}(a)).pos
+        pos = parsearray(x, GenericArrayClosure{A, types}(a)).pos
         valfunc(a)
         return pos
     elseif T == JSONTypes.STRING

@@ -24,6 +24,7 @@ function tolazy end
 tolazy(io::Union{IO, Base.AbstractCmd}; kw...) = tolazy(Base.read(io); kw...)
 
 function tolazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
+    buf = checkfile(buf)
     len = getlength(buf)
     if len == 0
         error = UnexpectedEOF

@@ -2,6 +2,7 @@ module JSONBase
 
 export Selectors
 
+using Mmap
 using Parsers
 
 getbuf(x) = getfield(x, :buf)

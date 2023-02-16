@@ -1,11 +1,20 @@
 using Test, JSONBase #, BenchmarkTools, JSON
 
+# helper struct for testing reading json from files
+struct File end
+
 @testset "JSONBase.tolazy" begin
     make(::Type{String}, x) = x
     make(::Type{SubString{String}}, x) = SubString(x)
     make(::Type{Vector{UInt8}}, x) = Vector{UInt8}(x)
     make(::Type{IOBuffer}, x) = IOBuffer(x)
-    for T in (String, SubString{String}, IOBuffer, Vector{UInt8})
+    function make(::Type{File}, x)
+        path, io = mktemp()
+        write(io, x)
+        close(io)
+        return path
+    end
+    for T in (String, SubString{String}, IOBuffer, Vector{UInt8}, File)
         @test JSONBase.gettype(JSONBase.tolazy(make(T, "1"))) == JSONBase.JSONTypes.NUMBER
         @test JSONBase.gettype(JSONBase.tolazy(make(T, "true"))) == JSONBase.JSONTypes.TRUE
         @test JSONBase.gettype(JSONBase.tolazy(make(T, "false"))) == JSONBase.JSONTypes.FALSE
