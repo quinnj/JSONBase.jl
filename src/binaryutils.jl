@@ -3,13 +3,13 @@
 # not used at all for objects/arrays
 # for strings, if sizeof string is < 16 bytes, then
 # the size is embedded and no Int32 is needed after
-# the BJSONMeta byte
+# the BinaryMeta byte
 # for numbers, we encode the # of bytes used for the
 # int/float; BigInt/BigFloat are 0 and have their size stored
-# in an Int8 right after BJSONMeta byte
+# in an Int8 right after BinaryMeta byte
 # Int128 is store as 15, since that's the max in 4 bits
 # used in conjunction w/ an embedded JSONTypes.T
-# in BJSONMeta for an entire byte of metadata
+# in BinaryMeta for an entire byte of metadata
 primitive type SizeMeta 8 end
 SizeMeta(x::UInt8) = Base.bitcast(SizeMeta, x)
 Base.UInt8(x::SizeMeta) = Base.bitcast(UInt8, x)
@@ -41,27 +41,27 @@ end
 sizemeta(size::Integer) = size <= EMBEDDED_SIZE_MASK, SizeMeta(size <= EMBEDDED_SIZE_MASK, size % UInt8)
 
 # 5 highest bits are SizeMeta, lower 3 are JSONTypes.T
-primitive type BJSONMeta 8 end
-BJSONMeta(x::UInt8) = Base.bitcast(BJSONMeta, x)
-Base.UInt8(x::BJSONMeta) = Base.bitcast(UInt8, x)
+primitive type BinaryMeta 8 end
+BinaryMeta(x::UInt8) = Base.bitcast(BinaryMeta, x)
+Base.UInt8(x::BinaryMeta) = Base.bitcast(UInt8, x)
 
 const TYPE_MASK = 0b00000111
 const SIZE_MASK = 0b11111000
 
-function Base.getproperty(x::BJSONMeta, nm::Symbol)
+function Base.getproperty(x::BinaryMeta, nm::Symbol)
     if nm == :type
         return JSONTypes.T(Base.bitcast(UInt8, x) & TYPE_MASK)
     elseif nm == :size
         return SizeMeta((Base.bitcast(UInt8, x) & SIZE_MASK) >> 3)
     else
-        throw(ArgumentError("invalid BJSONMeta property: $nm"))
+        throw(ArgumentError("invalid BinaryMeta property: $nm"))
     end
 end
 
-Base.propertynames(::BJSONMeta) = (:type, :size)
+Base.propertynames(::BinaryMeta) = (:type, :size)
 
-Base.show(io::IO, x::BJSONMeta) = print(io, "BJSONMeta(type=", x.type, ", size=", x.size, ")")
+Base.show(io::IO, x::BinaryMeta) = print(io, "BinaryMeta(type=", x.type, ", size=", x.size, ")")
 
-function BJSONMeta(type::JSONTypes.T, size::SizeMeta=SizeMeta(true))
-    return BJSONMeta(UInt8(type) | (UInt8(size) << 3))
+function BinaryMeta(type::JSONTypes.T, size::SizeMeta=SizeMeta(true))
+    return BinaryMeta(UInt8(type) | (UInt8(size) << 3))
 end

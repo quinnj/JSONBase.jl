@@ -1,5 +1,5 @@
 """
-    JSONBase.tobjson(json) -> JSONBase.BJSONValue
+    JSONBase.binary(json) -> JSONBase.BinaryValue
 
 Convert a JSON input (string, byte vector, io, LazyValue, etc)
 to an efficient, materialized, binary representation.
@@ -10,20 +10,20 @@ This binary format can be particularly efficient as a materialization vs.
 a generic representation (e.g. `Dict`, `Array`, etc.) when the JSON
 has deeply nested structures.
 
-A `BJSONValue` is returned that supports the "selection" syntax,
-similar to LazyValue. The `BJSONValue` can also be materialized via:
-  * `JSONBase.togeneric`: a generic Julia representation (Dict, Array, etc.)
-  * `JSONBase.tostruct`: construct an instance of user-provided `T` from JSON
+A `BinaryValue` is returned that supports the "selection" syntax,
+similar to LazyValue. The `BinaryValue` can also be materialized via:
+  * `JSONBase.materialize`: a generic Julia representation (Dict, Array, etc.)
+  * `JSONBase.materialize`: construct an instance of user-provided `T` from JSON
 """
-function tobjson end
+function binary end
 
-tobjson(io::Union{IO, Base.AbstractCmd}; kw...) = tobjson(Base.read(io); kw...)
-tobjson(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = tobjson(tolazy(buf; kw...))
+binary(io::Union{IO, Base.AbstractCmd}; kw...) = binary(Base.read(io); kw...)
+binary(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = binary(lazy(buf; kw...))
 
-function tobjson(x::LazyValue)
+function binary(x::LazyValue)
     tape = Vector{UInt8}(undef, 128)
     i = 1
-    pos, i = tobjson!(x, tape, i)
+    pos, i = binary!(x, tape, i)
     buf = getbuf(x)
     len = getlength(buf)
     if getpos(x) == 1
@@ -40,31 +40,31 @@ function tobjson(x::LazyValue)
         end
     end
     resize!(tape, i - 1)
-    return BJSONValue(tape, 1, gettype(tape, 1))
+    return BinaryValue(tape, 1, gettype(tape, 1))
 end
 
 """
-    JSONBase.BJSONValue
+    JSONBase.BinaryValue
 
 A materialized, binary representation of a JSON value.
-The `BJSONValue` type supports the "selection" syntax for
-navigating the BJSONValue structure. BJSONValues can be materialized via:
-  * `JSONBase.togeneric`: a generic Julia representation (Dict, Array, etc.)
-  * `JSONBase.tostruct`: construct an instance of user-provided `T` from JSON
+The `BinaryValue` type supports the "selection" syntax for
+navigating the BinaryValue structure. BinaryValues can be materialized via:
+  * `JSONBase.materialize`: a generic Julia representation (Dict, Array, etc.)
+  * `JSONBase.materialize`: construct an instance of user-provided `T` from JSON
 
-The BJSONValue is a "tape" of bytes that is independently valid/serializable/self-describing.
+The BinaryValue is a "tape" of bytes that is independently valid/serializable/self-describing.
 The following is a description of the binary format for
 the various types of JSON values.
 
 Each JSON value uses at least 1 byte to be encoded.
-This byte is represented interally as the `BJSONMeta` primitive
+This byte is represented interally as the `BinaryMeta` primitive
 type, and holds information about the type of value and
 potentially some extra size information.
 
 For `null`, `true`, and `false` values, knowing the type is sufficient,
 and no additional bytes are needed for encoding.
 
-For number values, the `BJSONMeta` byte encodes whether the number
+For number values, the `BinaryMeta` byte encodes whether the number
 is an integer or a float, and the number of bytes needed to encode
 the number. Integers and floats are truncated to the smallest # of bytes
 necessary to represent the value. For example, the number `1.0` is
@@ -76,14 +76,14 @@ while floats will be materialized as `Float64` or `BigFloat`.
 their values as strings in the binary tape and similarly to deserialize.
 
 For string values, the string data is stored directly in the binary tape.
-If the # of bytes is < 16, then the size will be encoded in the `BJSONMeta`
+If the # of bytes is < 16, then the size will be encoded in the `BinaryMeta`
 byte. If the # of bytes is >= 16, then the size will be encoded explicitly
-as a `UInt32` value in the binary tape immediately following the `BJSONMeta`
+as a `UInt32` value in the binary tape immediately following the `BinaryMeta`
 byte. The string data is encoded as UTF-8, and escaped JSON characters
 are unescaped. This allows the string data to be directly materialized from
 the tape without further processing needed.
 
-For object/array values, the `BJSONMeta` byte only encodes the type.
+For object/array values, the `BinaryMeta` byte only encodes the type.
 Immediately after the meta byte, we store the total # of non meta-bytes
 the object/array elements take up. This is encoded as a `UInt32` value.
 After the `UInt32` total # of bytes, we store another `UInt32` value
@@ -99,26 +99,26 @@ array will take up 9 bytes in the binary tape (1 meta byte, 4 bytes for
 the total # of bytes, 4 bytes for the # of elements, 0 for elements).
 
 """
-struct BJSONValue
+struct BinaryValue
     tape::Vector{UInt8}
     pos::Int
     type::JSONTypes.T
 end
 
-Base.getindex(x::BJSONValue) = togeneric(x)
+Base.getindex(x::BinaryValue) = materialize(x)
 
-function API.JSONType(x::BJSONValue)
+function API.JSONType(x::BinaryValue)
     T = gettype(x)
     return T == JSONTypes.OBJECT ? API.ObjectLike() :
         T == JSONTypes.ARRAY ? API.ArrayLike() : nothing
 end
 
 function gettype(tape::Vector{UInt8}, pos::Int)
-    bm = BJSONMeta(getbyte(tape, pos))
+    bm = BinaryMeta(getbyte(tape, pos))
     return bm.type
 end
 
-include("bjsonutils.jl")
+include("binaryutils.jl")
 
 function reallocate!(x::LazyValue, tape, i)
     # println("reallocating...")
@@ -137,64 +137,64 @@ macro check(n)
     end)
 end
 
-mutable struct BJSONObjectClosure{T}
+mutable struct BinaryObjectClosure{T}
     tape::Vector{UInt8}
     i::Int
     x::LazyValue{T}
     nfields::Int
 end
 
-@inline function (f::BJSONObjectClosure{T})(k, v) where {T}
+@inline function (f::BinaryObjectClosure{T})(k, v) where {T}
     # first we encode the key
-    i = _tobjson(k, f.tape, f.i, f.x)
+    i = _binary(k, f.tape, f.i, f.x)
     # then we encode the value recursively
-    pos, f.i = tobjson!(v, f.tape, i)
+    pos, f.i = binary!(v, f.tape, i)
     f.nfields += 1
     return API.Continue(pos)
 end
 
-mutable struct BJSONArrayClosure
+mutable struct BinaryArrayClosure
     tape::Vector{UInt8}
     i::Int
     nelems::Int
 end
 
-@inline function (f::BJSONArrayClosure)(_, v)
-    pos, f.i = tobjson!(v, f.tape, f.i)
+@inline function (f::BinaryArrayClosure)(_, v)
+    pos, f.i = binary!(v, f.tape, f.i)
     f.nelems += 1
     return API.Continue(pos)
 end
 
-struct BJSONNumberClosure{T}
+struct BinaryNumberClosure{T}
     tape::Vector{UInt8}
     i::Int
     newi::Base.RefValue{Int}
     x::LazyValue{T}
 end
 
-@inline function (f::BJSONNumberClosure{T})(y::Y) where {T, Y}
-    f.newi[] = _tobjson(y, f.tape, f.i, f.x, true)
+@inline function (f::BinaryNumberClosure{T})(y::Y) where {T, Y}
+    f.newi[] = _binary(y, f.tape, f.i, f.x, true)
     return
 end
 
-@inline function tobjson!(x::LazyValue, tape, i)
+@inline function binary!(x::LazyValue, tape, i)
     if gettype(x) == JSONTypes.OBJECT
         tape_i = i
         @check 1 + 4 + 4
-        # skip past our BJSONMeta tape slot for now
+        # skip past our BinaryMeta tape slot for now
         # skip 8 bytes for total # of bytes (4) and # of fields (4)
         i += 1 + 4 + 4
         # now we can start writing the fields
-        c = BJSONObjectClosure(tape, i, x, 0)
+        c = BinaryObjectClosure(tape, i, x, 0)
         pos = parseobject(x, c).pos
         # compute SizeMeta, even though we write nfields unconditionally
         _, sm = sizemeta(c.nfields)
         # note: we pre-@checked earlier
-        tape[tape_i] = UInt8(BJSONMeta(JSONTypes.OBJECT, sm))
+        tape[tape_i] = UInt8(BinaryMeta(JSONTypes.OBJECT, sm))
         # store total # of bytes
         i = c.i
         nbytes = (i - tape_i) - # total bytes consumed so far
-            1 - # for BJSONMeta
+            1 - # for BinaryMeta
             4 - # for total # of bytes
             4 # for # of fields
         _writenumber(Int32(nbytes), tape, tape_i + 1)
@@ -202,22 +202,22 @@ end
         _writenumber(Int32(c.nfields), tape, tape_i + 5)
         return pos, i
     elseif gettype(x) == JSONTypes.ARRAY
-        # skip past our BJSONMeta tape slot for now
+        # skip past our BinaryMeta tape slot for now
         tape_i = i
         @check 1 + 4 + 4
         i += 1
         # skip 8 bytes for total # of bytes (4) and # of elements (4)
         i += 8
         # now we can start writing the elements
-        c = BJSONArrayClosure(tape, i, 0)
+        c = BinaryArrayClosure(tape, i, 0)
         pos = parsearray(x, c).pos
         # compute SizeMeta, even though we write nelems unconditionally
         _, sm = sizemeta(c.nelems)
-        # store eltype in BJSONMeta size or 0x1f if not homogenous
-        tape[tape_i] = UInt8(BJSONMeta(JSONTypes.ARRAY, sm))
+        # store eltype in BinaryMeta size or 0x1f if not homogenous
+        tape[tape_i] = UInt8(BinaryMeta(JSONTypes.ARRAY, sm))
         i = c.i
         nbytes = (i - tape_i) - # total bytes consumed so far
-            1 - # for BJSONMeta
+            1 - # for BinaryMeta
             4 - # for total # of bytes
             4 # for # of fields
         # store total # of bytes
@@ -227,22 +227,22 @@ end
         return pos, i
     elseif gettype(x) == JSONTypes.STRING
         y, pos = parsestring(x)
-        return pos, _tobjson(y, tape, i, x)
+        return pos, _binary(y, tape, i, x)
     elseif gettype(x) == JSONTypes.NUMBER
-        c = BJSONNumberClosure(tape, i, Ref(0), x)
+        c = BinaryNumberClosure(tape, i, Ref(0), x)
         pos = parsenumber(x, c)
         return pos, c.newi[]
     elseif gettype(x) == JSONTypes.NULL
         @check 1
-        tape[i] = UInt8(BJSONMeta(JSONTypes.NULL))
+        tape[i] = UInt8(BinaryMeta(JSONTypes.NULL))
         return getpos(x) + 4, i + 1
     elseif gettype(x) == JSONTypes.TRUE
         @check 1
-        tape[i] = UInt8(BJSONMeta(JSONTypes.TRUE))
+        tape[i] = UInt8(BinaryMeta(JSONTypes.TRUE))
         return getpos(x) + 4, i + 1
     elseif gettype(x) == JSONTypes.FALSE
         @check 1
-        tape[i] = UInt8(BJSONMeta(JSONTypes.FALSE))
+        tape[i] = UInt8(BinaryMeta(JSONTypes.FALSE))
         return getpos(x) + 5, i + 1
     else
         error("Invalid JSON type")
@@ -251,15 +251,15 @@ end
 
 function embedded_sizemeta(n)
     es, sm = sizemeta(n)
-    es || throw(ArgumentError("`$n` is too large to encode in BJSON"))
+    es || throw(ArgumentError("`$n` is too large to encode in Binary"))
     return sm
 end
 
-@inline function _tobjson(y::PtrString, tape, i, x)
+@inline function _binary(y::PtrString, tape, i, x)
     n = y.len
     embedded_size, sm = sizemeta(n)
     @check 1 + (embedded_size ? 0 : 4) + n
-    tape[i] = UInt8(BJSONMeta(JSONTypes.STRING, sm))
+    tape[i] = UInt8(BinaryMeta(JSONTypes.STRING, sm))
     i += 1
     if !embedded_size
         i = _writenumber(Int32(n), tape, i)
@@ -288,7 +288,7 @@ function writenumber(y::T, tape, i, x::LazyValue) where {T <: Number}
     # encodes the actual # bytes in the next byte
     sm = embedded_sizemeta(min(15, n))
     @check 1 + n
-    tape[i] = UInt8(BJSONMeta(y isa Integer ? JSONTypes.INT : JSONTypes.FLOAT, sm))
+    tape[i] = UInt8(BinaryMeta(y isa Integer ? JSONTypes.INT : JSONTypes.FLOAT, sm))
     i += 1
     return _writenumber(y, tape, i)
 end
@@ -313,9 +313,9 @@ function writenumber(y::BigInt, tape, i, x::LazyValue)
     sm = embedded_sizemeta(0)
     # need 1 for meta byte, 1 for size byte, and n for the string
     @check 1 + 1 + n
-    @assert n < 256 "BigInt too large to encode in BJSON: `$y`"
-    # first we store our BJSONMeta byte
-    tape[i] = UInt8(BJSONMeta(JSONTypes.INT, sm))
+    @assert n < 256 "BigInt too large to encode in Binary: `$y`"
+    # first we store our BinaryMeta byte
+    tape[i] = UInt8(BinaryMeta(JSONTypes.INT, sm))
     i += 1
     # then we store the # of bytes needed to store the BigInt
     # god so help me if anyone ever files a bug saying
@@ -358,9 +358,9 @@ function writenumber(y::BigFloat, tape, i, x::LazyValue)
     sm = embedded_sizemeta(0)
     # need 1 for meta byte, 1 for size byte, and n for the string
     @check 1 + 1 + n
-    @assert n < 256 "BigFloat too large to encode in BJSON: `$y`"
-    # first we store our BJSONMeta byte
-    tape[i] = UInt8(BJSONMeta(JSONTypes.FLOAT, sm))
+    @assert n < 256 "BigFloat too large to encode in Binary: `$y`"
+    # first we store our BinaryMeta byte
+    tape[i] = UInt8(BinaryMeta(JSONTypes.FLOAT, sm))
     i += 1
     # then we store the # of bytes needed to store the BigFloat
     tape[i] = n % UInt8
@@ -377,12 +377,12 @@ end
     z = BigFloat()
     # mpfr library function to read a string into our BigFloat `z` variable
     err = GC.@preserve tape ccall((:mpfr_set_str, libmpfr), Int32, (Ref{BigFloat}, Cstring, Int32, Base.MPFR.MPFRRoundingMode), z, pointer(tape, i), 0, Base.MPFR.ROUNDING_MODE[])
-    err == 0 || throw(ArgumentError("invalid bjson BigFloat"))
+    err == 0 || throw(ArgumentError("invalid binary BigFloat"))
     i += n
     return z, i
 end
 
-@inline function _tobjson(y::Integer, tape, i, x::LazyValue, trunc)
+@inline function _binary(y::Integer, tape, i, x::LazyValue, trunc)
     if trunc
         # if truncating, we check what the smallest integer type
         # is that can hold our value
@@ -404,7 +404,7 @@ end
     end
 end
 
-@inline function _tobjson(y::AbstractFloat, tape, i, x::LazyValue, trunc)
+@inline function _binary(y::AbstractFloat, tape, i, x::LazyValue, trunc)
     if trunc
         if Float16(y) == y
             return writenumber(Float16(y), tape, i, x)
@@ -427,24 +427,24 @@ end
     return unsafe_load(ptr)
 end
 
-# core object processing function for bjson format
+# core object processing function for binary format
 # we're really just reading the number of fields
 # then looping over them to call keyvalfunc on the
 # key-value pairs.
 # follows the same rules as parseobject on LazyValue for returning
-@inline function parseobject(x::BJSONValue, keyvalfunc::F) where {F}
+@inline function parseobject(x::BinaryValue, keyvalfunc::F) where {F}
     tape = gettape(x)
     pos = getpos(x)
-    bm = BJSONMeta(getbyte(tape, pos))
-    bm.type == JSONTypes.OBJECT || throw(ArgumentError("expected bjson object: `$(bm.type)`"))
+    bm = BinaryMeta(getbyte(tape, pos))
+    bm.type == JSONTypes.OBJECT || throw(ArgumentError("expected binary object: `$(bm.type)`"))
     pos += 1
     nbytes = readnumber(tape, pos, Int32)
     pos += 4
     nfields = readnumber(tape, pos, Int32)
     pos += 4
     for _ = 1:nfields
-        key, pos = parsestring(BJSONValue(tape, pos, JSONTypes.STRING))
-        b = BJSONValue(tape, pos, gettype(tape, pos))
+        key, pos = parsestring(BinaryValue(tape, pos, JSONTypes.STRING))
+        b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(key, b)
         ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(b) : ret.pos
@@ -452,18 +452,18 @@ end
     return API.Continue(pos)
 end
 
-@inline function parsearray(x::BJSONValue, keyvalfunc::F) where {F}
+@inline function parsearray(x::BinaryValue, keyvalfunc::F) where {F}
     tape = gettape(x)
     pos = getpos(x)
-    bm = BJSONMeta(getbyte(tape, pos))
-    bm.type == JSONTypes.ARRAY || throw(ArgumentError("expected bjson array: `$(bm.type)`"))
+    bm = BinaryMeta(getbyte(tape, pos))
+    bm.type == JSONTypes.ARRAY || throw(ArgumentError("expected binary array: `$(bm.type)`"))
     pos += 1
     nbytes = readnumber(tape, pos, Int32)
     pos += 4
     nfields = readnumber(tape, pos, Int32)
     pos += 4
     for i = 1:nfields
-        b = BJSONValue(tape, pos, gettype(tape, pos))
+        b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(i, b)
         ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(b) : ret.pos
@@ -471,13 +471,13 @@ end
     return API.Continue(pos)
 end
 
-# return a PtrString for an embedded string in bjson format
+# return a PtrString for an embedded string in binary format
 # we return a PtrString to allow callers flexibility
 # in how they want to materialize/compare/etc.
-@inline function parsestring(x::BJSONValue)
+@inline function parsestring(x::BinaryValue)
     tape = gettape(x)
     pos = getpos(x)
-    bm = BJSONMeta(getbyte(tape, pos))
+    bm = BinaryMeta(getbyte(tape, pos))
     @assert bm.type == JSONTypes.STRING
     pos += 1
     sm = bm.size
@@ -490,14 +490,14 @@ end
     return PtrString(pointer(tape, pos), len, false), pos + len
 end
 
-# reading an integer from bjson format involves
-# inspecting the BJSONMeta byte to determine the
+# reading an integer from binary format involves
+# inspecting the BinaryMeta byte to determine the
 # # of bytes the integer takes for encoding,
 # or switching to BigInt decoding if the embedded size is 0
-@inline function parseint(x::BJSONValue, valfunc::F) where {F}
+@inline function parseint(x::BinaryValue, valfunc::F) where {F}
     tape = gettape(x)
     pos = getpos(x)
-    bm = BJSONMeta(getbyte(tape, pos))
+    bm = BinaryMeta(getbyte(tape, pos))
     @assert bm.type == JSONTypes.INT
     pos += 1
     sm = bm.size
@@ -518,15 +518,15 @@ end
         valfunc(val)
         return pos
     else
-        throw(ArgumentError("invalid bjson int size: $sz"))
+        throw(ArgumentError("invalid binary int size: $sz"))
     end
     return pos + sz
 end
 
-@inline function parsefloat(x::BJSONValue, valfunc::F) where {F}
+@inline function parsefloat(x::BinaryValue, valfunc::F) where {F}
     tape = gettape(x)
     pos = getpos(x)
-    bm = BJSONMeta(getbyte(tape, pos))
+    bm = BinaryMeta(getbyte(tape, pos))
     @assert bm.type == JSONTypes.FLOAT
     pos += 1
     sm = bm.size
@@ -543,16 +543,16 @@ end
         valfunc(val)
         return pos
     else
-        throw(ArgumentError("invalid bjson float size: $sz"))
+        throw(ArgumentError("invalid binary float size: $sz"))
     end
     return pos + sz
 end
 
-# efficiently skip over a bjson value
+# efficiently skip over a binary value
 # for object/array, we know to skip over the 9 meta bytes
 # and read the 2-5 bytes for the total # of bytes to skip over
 # for all the fields/elements.
-function skip(x::BJSONValue)
+function skip(x::BinaryValue)
     tape = gettape(x)
     pos = getpos(x)
     T = gettype(x)
@@ -561,10 +561,10 @@ function skip(x::BJSONValue)
         nbytes = readnumber(tape, pos, Int32)
         return pos + 8 + nbytes
     elseif T == JSONTypes.STRING
-        sm = BJSONMeta(getbyte(tape, pos)).size
+        sm = BinaryMeta(getbyte(tape, pos)).size
         pos += 1
         # for strings, we need to check if their size
-        # is embedded in the BJSONMeta byte
+        # is embedded in the BinaryMeta byte
         if sm.is_size_embedded
             return pos + sm.embedded_size
         else
@@ -573,7 +573,7 @@ function skip(x::BJSONValue)
             return pos + 4 + readnumber(tape, pos, Int32)
         end
     else
-        bm = BJSONMeta(getbyte(tape, pos))
+        bm = BinaryMeta(getbyte(tape, pos))
         pos += 1
         return pos + bm.size.embedded_size
     end

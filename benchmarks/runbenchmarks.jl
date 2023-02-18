@@ -36,21 +36,21 @@ json = """
 
 @btime JSON.parse(json) #   2.699 μs (63 allocations: 4.09 KiB)
 @btime JSON3.read(json) #   1.521 μs (7 allocations: 5.44 KiB)
-@btime JSONBase.togeneric(json) #   2.736 μs (72 allocations: 4.26 KiB)
-@btime JSONBase.tobjson(json) #   1.479 μs (21 allocations: 1.50 KiB)
-x = JSONBase.tobjson(json)
-@btime JSONBase.togeneric($x)
+@btime JSONBase.materialize(json) #   2.736 μs (72 allocations: 4.26 KiB)
+@btime JSONBase.binary(json) #   1.479 μs (21 allocations: 1.50 KiB)
+x = JSONBase.binary(json)
+@btime JSONBase.materialize($x)
 
 
-# julia> @btime JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
+# julia> @btime JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
 #   183.152 ns (3 allocations: 144 bytes)
 # A(1, 2, 3, 4)
 
-# julia> @btime JSONBase.tostruct!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
+# julia> @btime JSONBase.materialize!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
 #   240.526 ns (1 allocation: 48 bytes)
 # B(1, 2, 3, 4)
 
-# julia> @btime JSONBase.togeneric("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
+# julia> @btime JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
 #   364.038 ns (9 allocations: 624 bytes)
 # Dict{String, Any} with 4 entries:
 #   "c" => 3
@@ -78,6 +78,6 @@ x = JSONBase.tobjson(json)
 #   1.129 μs (3 allocations: 544 bytes)
 # A(1, 2, 3, 4)
 
-# julia> @btime JSONBase.tobjson("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
+# julia> @btime JSONBase.binary("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
 #   185.816 ns (6 allocations: 256 bytes)
-# JSONBase.BJSONValue(UInt8[0xa7, 0x10, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x8d  …  0x8b, 0x02, 0x8d, 0x63, 0x8b, 0x03, 0x8d, 0x64, 0x8b, 0x04], 1, JSONTypes.OBJECT)
+# JSONBase.BinaryValue(UInt8[0xa7, 0x10, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x8d  …  0x8b, 0x02, 0x8d, 0x63, 0x8b, 0x03, 0x8d, 0x64, 0x8b, 0x04], 1, JSONTypes.OBJECT)

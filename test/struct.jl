@@ -13,7 +13,7 @@ mutable struct B
     B() = new()
 end
 
-JSONBase.StructType(::Type{B}) = JSONBase.Mutable()
+JSONBase.mutable(::Type{B}) = true
 
 struct C
 end
@@ -83,7 +83,7 @@ Base.@kwdef struct F
     name::String
 end
 
-JSONBase.StructType(::Type{F}) = JSONBase.KwDef()
+JSONBase.kwdef(::Type{F}) = true
 
 Base.@kwdef struct G
     id::Int
@@ -135,51 +135,99 @@ struct K
     value::Union{Float64, Missing}
 end
 
-@testset "JSONBase.tostruct" begin
-    obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
+Base.@kwdef struct System
+    duration::Real = 0 # mandatory
+    cwd::Union{Nothing, String} = nothing
+    environment::Union{Nothing, Dict} = nothing
+    batch::Union{Nothing, Dict} = nothing
+    shell::Union{Nothing, Dict} = nothing
+end
+
+@testset "JSONBase.materialize" begin
+    obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
     # test order doesn't matter
-    obj2 = JSONBase.tostruct("""{ "d": 1,"b": 2,"c": 3,"a": 4}""", A)
+    obj2 = JSONBase.materialize("""{ "d": 1,"b": 2,"c": 3,"a": 4}""", A)
     @test obj2 == A(4, 2, 3, 1)
     # NamedTuple
-    obj = JSONBase.tostruct("""{ "d": 1,"b": 2,"c": 3,"a": 4}""", NamedTuple{(:a, :b, :c, :d), Tuple{Int, Int, Int, Int}})
+    obj = JSONBase.materialize("""{ "d": 1,"b": 2,"c": 3,"a": 4}""", NamedTuple{(:a, :b, :c, :d), Tuple{Int, Int, Int, Int}})
     @test obj == (a = 4, b = 2, c = 3, d = 1)
-    @test JSONBase.tostruct("{}", C) === C()
-    obj = JSONBase.tostruct!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
+    @test JSONBase.materialize("{}", C) === C()
+    obj = JSONBase.materialize!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
     @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
-    obj = JSONBase.tostruct("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
+    obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
     @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
-    obj = JSONBase.tostruct("""{ "a": 1,"b": 2.0,"c": "3"}""", D)
+    obj = B()
+    JSONBase.materialize!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", obj)
+    @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
+    obj = JSONBase.materialize("""{ "a": 1,"b": 2.0,"c": "3"}""", D)
     @test obj == D(1, 2.0, "3")
-    obj = JSONBase.tostruct("""{ "x1": "1","x2": "2","x3": "3","x4": "4","x5": "5","x6": "6","x7": "7","x8": "8","x9": "9","x10": "10","x11": "11","x12": "12","x13": "13","x14": "14","x15": "15","x16": "16","x17": "17","x18": "18","x19": "19","x20": "20","x21": "21","x22": "22","x23": "23","x24": "24","x25": "25","x26": "26","x27": "27","x28": "28","x29": "29","x30": "30","x31": "31","x32": "32","x33": "33","x34": "34","x35": "35"}""", LotsOfFields)
+    obj = JSONBase.materialize("""{ "x1": "1","x2": "2","x3": "3","x4": "4","x5": "5","x6": "6","x7": "7","x8": "8","x9": "9","x10": "10","x11": "11","x12": "12","x13": "13","x14": "14","x15": "15","x16": "16","x17": "17","x18": "18","x19": "19","x20": "20","x21": "21","x22": "22","x23": "23","x24": "24","x25": "25","x26": "26","x27": "27","x28": "28","x29": "29","x30": "30","x31": "31","x32": "32","x33": "33","x34": "34","x35": "35"}""", LotsOfFields)
     @test obj == LotsOfFields("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35")
-    obj = JSONBase.tostruct("""{ "x": {"a": 1, "b": "2"}}""", Wrapper)
+    obj = JSONBase.materialize("""{ "x": {"a": 1, "b": "2"}}""", Wrapper)
     @test obj == Wrapper((a=1, b="2"))
-    obj = JSONBase.tostruct!("""{ "id": 1, "name": "2"}""", UndefGuy)
+    obj = JSONBase.materialize!("""{ "id": 1, "name": "2"}""", UndefGuy)
     @test obj.id == 1 && obj.name == "2"
-    obj = JSONBase.tostruct!("""{ "id": 1}""", UndefGuy)
+    obj = JSONBase.materialize!("""{ "id": 1}""", UndefGuy)
     @test obj.id == 1 && !isdefined(obj, :name)
-    obj = JSONBase.tostruct("""{ "id": 1, "a": {"a": 1, "b": 2, "c": 3, "d": 4}}""", E)
+    obj = JSONBase.materialize("""{ "id": 1, "a": {"a": 1, "b": 2, "c": 3, "d": 4}}""", E)
     @test obj == E(1, A(1, 2, 3, 4))
-    obj = JSONBase.tostruct("""{ "id": 1, "rate": 2.0, "name": "3"}""", F)
+    obj = JSONBase.materialize("""{ "id": 1, "rate": 2.0, "name": "3"}""", F)
     @test obj == F(1, 2.0, "3")
-    obj = JSONBase.tokwstruct("""{ "id": 1, "rate": 2.0, "name": "3", "f": {"id": 1, "rate": 2.0, "name": "3"}}""", G)
+    obj = JSONBase.materialize("""{ "id": 1, "rate": 2.0, "name": "3", "f": {"id": 1, "rate": 2.0, "name": "3"}}""", G; kwdef=true)
     @test obj == G(1, 2.0, "3", F(1, 2.0, "3"))
     # Dict/Array fields
-    obj = JSONBase.tostruct("""{ "id": 1, "name": "2", "properties": {"a": 1, "b": 2}, "addresses": ["a", "b"]}""", H)
+    obj = JSONBase.materialize("""{ "id": 1, "name": "2", "properties": {"a": 1, "b": 2}, "addresses": ["a", "b"]}""", H)
     @test obj.id == 1 && obj.name == "2" && obj.properties == Dict("a" => 1, "b" => 2) && obj.addresses == ["a", "b"]
     # Enum
-    @test JSONBase.tostruct("\"apple\"", Fruit) == apple
-    @test JSONBase.tostruct("""{"id": 1, "name": "2", "fruit": "banana"}  """, I) == I(1, "2", banana)
+    @test JSONBase.materialize("\"apple\"", Fruit) == apple
+    @test JSONBase.materialize("""{"id": 1, "name": "2", "fruit": "banana"}  """, I) == I(1, "2", banana)
     # abstract type
-    x = JSONBase.tolazy("""{"type": "car","make": "Mercedes-Benz","model": "S500","seatingCapacity": 5,"topSpeed": 250.1}""")
+    x = JSONBase.lazy("""{"type": "car","make": "Mercedes-Benz","model": "S500","seatingCapacity": 5,"topSpeed": 250.1}""")
     choose(x) = x.type[] == "car" ? Car : Truck
-    @test JSONBase.tostruct(x, choose(x)) == Car("car", "Mercedes-Benz", "S500", 5, 250.1)
-    x = JSONBase.tolazy("""{"type": "truck","make": "Isuzu","model": "NQR","payloadCapacity": 7500.5}""")
-    @test JSONBase.tostruct(x, choose(x)) == Truck("truck", "Isuzu", "NQR", 7500.5)
+    @test JSONBase.materialize(x, choose(x)) == Car("car", "Mercedes-Benz", "S500", 5, 250.1)
+    x = JSONBase.lazy("""{"type": "truck","make": "Isuzu","model": "NQR","payloadCapacity": 7500.5}""")
+    @test JSONBase.materialize(x, choose(x)) == Truck("truck", "Isuzu", "NQR", 7500.5)
     # union
-    @test JSONBase.tostruct("""{"id": 1, "name": "2", "rate": 3}""", J) == J(1, "2", 3)
-    @test JSONBase.tostruct("""{"id": null, "name": null, "rate": 3.14}""", J) == J(nothing, nothing, 3.14)
+    @test JSONBase.materialize("""{"id": 1, "name": "2", "rate": 3}""", J) == J(1, "2", 3)
+    @test JSONBase.materialize("""{"id": null, "name": null, "rate": 3.14}""", J) == J(nothing, nothing, 3.14)
     # test K
-    # @test JSONBase.tostruct("""{"id": 1, "value": null}""", K) == K(1, "2", 3.14)
+    # @test JSONBase.materialize("""{"id": 1, "value": null}""", K) == K(1, "2", 3.14)
+    # Real
+    @test JSONBase.materialize("""{"duration": 3600.0}""", System; kwdef=true) == System(duration=3600.0)
+    # struct + jsonlines
+    for raw in [
+        """
+        { "a": 1,  "b": 3.14,  "c": "hey" }
+        { "a": 2,  "b": 6.28,  "c": "hi"  }
+        """,
+        # No newline at end
+        """
+        { "a": 1,  "b": 3.14,  "c": "hey" }
+        { "a": 2,  "b": 6.28,  "c": "hi"  }""",
+        # No newline, extra whitespace at end
+        """
+        { "a": 1,  "b": 3.14,  "c": "hey" }
+        { "a": 2,  "b": 6.28,  "c": "hi"  }   """,
+        # Whitespace at start of line
+        """
+          { "a": 1,  "b": 3.14,  "c": "hey" }
+          { "a": 2,  "b": 6.28,  "c": "hi"  }
+        """,
+        # Extra whitespace at beginning, end of lines, end of string
+        " { \"a\": 1,  \"b\": 3.14,  \"c\": \"hey\" }  \n" *
+        "  { \"a\": 2,  \"b\": 6.28,  \"c\": \"hi\"  }  \n  ",
+    ]
+        for nl in ("\n", "\r", "\r\n")
+            jsonl = replace(raw, "\n" => nl)
+            dss = JSONBase.materialize(jsonl, Vector{D}, jsonlines=true)
+            @test length(dss) == 2
+            @test dss[1].a == 1
+            @test dss[1].b == 3.14
+            @test dss[1].c == "hey"
+            @test dss[2].a == 2
+            @test dss[2].b == 6.28
+            @test dss[2].c == "hi"
+        end
+    end
 end

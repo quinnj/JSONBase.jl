@@ -22,13 +22,12 @@ include("selectors.jl")
 using .Selectors
 
 include("lazy.jl")
-include("bjson.jl")
-include("generic.jl")
-include("struct.jl")
+include("binary.jl")
+include("materialize.jl")
 
 keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
-function API.foreach(f, x::Union{LazyValue, BJSONValue})
+function API.foreach(f, x::Union{LazyValue, BinaryValue})
     if gettype(x) == JSONTypes.OBJECT
         return parseobject(x, keyvaltostring(f))
     elseif gettype(x) == JSONTypes.ARRAY
@@ -39,7 +38,7 @@ function API.foreach(f, x::Union{LazyValue, BJSONValue})
 end
 
 Selectors.@selectors LazyValue
-Selectors.@selectors BJSONValue
+Selectors.@selectors BinaryValue
 
 end # module
 
@@ -56,19 +55,19 @@ end # module
        # use type field to figure out concrete subtype
        # convert to concrete struct
      # large jsonlines/object/array production processing
-       # iterate each line: tolazy, tobjson, togeneric
-       # start with tolazy, API.foreach on LazyValue
-       # preallocate tape buffer, call tobjson! w/ preallocated buffer
+       # iterate each line: lazy, binary, materialize
+       # start with lazy, API.foreach on LazyValue
+       # preallocate tape buffer, call binary! w/ preallocated buffer
        # in keyvalfunc to API.foreach,
-       # then call togeneric
+       # then call materialize
      # large, deeply nested json structures
        # use selection syntax to lazily navigate
-       # then tobjson, togeneric, tostruct
+       # then binary, materialize, materialize
      # how to form json
        # create Dict/NamedTuple/Array and call tojson
        # use struct and call tojson
        # support jsonlines output
- # JSONBase.tostruct that works on LazyValue, or BSONValue
+ # JSONBase.materialize that works on LazyValue, or BSONValue
    # JSONBase.fields overload to give names, types, excludes, defaults, etc.
  # package docs
  # tojson

@@ -55,7 +55,7 @@ module JSONTypes
     const FALSE = T(0x05)
     const TRUE = T(0x06)
     const NULL = T(0x07)
-    const NUMBER = T(0x08) # only used by LazyValue, BJSONValue uses INT or FLOAT
+    const NUMBER = T(0x08) # only used by LazyValue, BinaryValue uses INT or FLOAT
     const names = Dict(
         OBJECT => "OBJECT",
         ARRAY => "ARRAY",

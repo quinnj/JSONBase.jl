@@ -1,5 +1,5 @@
 """
-    JSONBase.tolazy(json; kw...)
+    JSONBase.lazy(json; kw...)
 
 Detect the initial JSON value in `json`, returning a
 `JSONBase.LazyValue` instance. `json` input can be:
@@ -11,19 +11,19 @@ Detect the initial JSON value in `json`, returning a
 The `JSONBase.LazyValue` supports the "selection" syntax
 for lazily navigating the JSON value. Lazy values can be
 materialized via:
-  * `JSONBase.tobjson`: an efficient, read-only binary format
-  * `JSONBase.togeneric`: a generic Julia representation (Dict, Array, etc.)
-  * `JSONBase.tostruct`: construct an instance of user-provided `T` from JSON
+  * `JSONBase.binary`: an efficient, read-only binary format
+  * `JSONBase.materialize(x)`: a generic Julia representation (Dict, Array, etc.)
+  * `JSONBase.materialize(x, T)`: construct an instance of user-provided `T` from JSON
 
 Currently supported keyword arguments include:
   * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float
   * `jsonlines`: 
 """
-function tolazy end
+function lazy end
 
-tolazy(io::Union{IO, Base.AbstractCmd}; kw...) = tolazy(Base.read(io); kw...)
+lazy(io::Union{IO, Base.AbstractCmd}; kw...) = lazy(Base.read(io); kw...)
 
-function tolazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
+function lazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
     buf = checkfile(buf)
     len = getlength(buf)
     if len == 0
@@ -33,7 +33,7 @@ function tolazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
     end
     pos = 1
     @nextbyte
-    return tolazy(buf, pos, len, b, Options(; kw...))
+    return lazy(buf, pos, len, b, Options(; kw...))
 
 @label invalid
     invalid(error, buf, pos, Any)
@@ -45,9 +45,9 @@ end
 A lazy representation of a JSON value. The `LazyValue` type
 supports the "selection" syntax for lazily navigating the JSON value.
 Lazy values can be materialized via:
-  * `JSONBase.tobjson`: an efficient, read-only binary format
-  * `JSONBase.togeneric`: a generic Julia representation (Dict, Array, etc.)
-  * `JSONBase.tostruct`: construct an instance of user-provided `T` from JSON
+  * `JSONBase.binary`: an efficient, read-only binary format
+  * `JSONBase.materialize`: a generic Julia representation (Dict, Array, etc.)
+  * `JSONBase.materialize`: construct an instance of user-provided `T` from JSON
 """
 struct LazyValue{T}
     buf::T
@@ -62,15 +62,15 @@ function Base.show(io::IO, x::LazyValue)
     print(io, "JSONBase.LazyValue(", gettype(x), ")")
 end
 
-# TODO: change this to tobjson
-Base.getindex(x::LazyValue) = togeneric(x)
+# TODO: change this to binary
+Base.getindex(x::LazyValue) = materialize(x)
 
 API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? API.ObjectLike() :
     gettype(x) == JSONTypes.ARRAY ? API.ArrayLike() : nothing
 
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
-function tolazy(buf, pos, len, b, opts)
+function lazy(buf, pos, len, b, opts)
     if opts.jsonlines
         return LazyValue(buf, pos, JSONTypes.ARRAY, opts)
     elseif b == UInt8('{')
@@ -139,7 +139,7 @@ end
         pos += 1
         @nextbyte
         # we're now positioned at the start of the value
-        val = tolazy(buf, pos, len, b, getopts(x))
+        val = lazy(buf, pos, len, b, getopts(x))
         ret = keyvalfunc(key, val)
         # if ret is not an API.Continue, then we're 
         # short-circuiting parsing via selection syntax
@@ -160,6 +160,49 @@ end
     end
 @label invalid
     invalid(error, buf, pos, "object")
+end
+
+# jsonlines is unique because it's an *implicit* array
+# so newlines are valid delimiters (not ignored whitespace)
+# and EOFs are valid terminators (not errors)
+# these checks are injected after we've processed the "line"
+# so we need to check for EOFs and newlines
+macro jsonlines_checks()
+    esc(quote
+        # if we're at EOF, then we're done
+        pos > len && return API.Continue(pos)
+        # now we want to ignore whitespace, but *not* newlines
+        b = getbyte(buf, pos)
+        while b == UInt8(' ') || b == UInt8('\t')
+            pos += 1
+            pos > len && return API.Continue(pos)
+            b = getbyte(buf, pos)
+        end
+        # any combo of '\r', '\n', or '\r\n' is a valid delimiter
+        foundr = false
+        if b == UInt8('\r')
+            foundr = true
+            pos += 1
+            pos > len && return API.Continue(pos)
+            b = getbyte(buf, pos)
+        end
+        if b == UInt8('\n')
+            pos += 1
+            pos > len && return API.Continue(pos)
+            b = getbyte(buf, pos)
+        elseif !foundr
+            # if we didn't find a newline and we're not EOF
+            # then that's an error; only whitespace, newlines,
+            # and EOFs are valid in between lines
+            error = ExpectedNewline
+            @goto invalid
+        end
+        while b == UInt8(' ') || b == UInt8('\t')
+            pos += 1
+            pos > len && return API.Continue(pos)
+            b = getbyte(buf, pos)
+        end
+    end)
 end
 
 # core JSON array parsing function
@@ -192,31 +235,12 @@ end
     i = 1
     while true
         # we're now positioned at the start of the value
-        val = tolazy(buf, pos, len, b, opts)
+        val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(i, val)
         ret isa API.Continue || return ret
         pos = ret.pos == 0 ? skip(val) : ret.pos
         if jsonlines
-            pos > len && return API.Continue(pos)
-            b = getbyte(buf, pos)
-            while b == UInt8(' ') || b == UInt8('\t')
-                pos += 1
-                pos > len && return API.Continue(pos)
-                b = getbyte(buf, pos)
-            end
-            if b == UInt8('\r')
-                pos += 1
-                pos > len && return API.Continue(pos)
-                b = getbyte(buf, pos)
-            end
-            if b == UInt8('\n')
-                pos += 1
-                pos > len && return API.Continue(pos)
-                b = getbyte(buf, pos)
-            else
-                error = ExpectedNewline
-                @goto invalid
-            end
+            @jsonlines_checks
         else
             @nextbyte
             if b == UInt8(']')
@@ -239,7 +263,7 @@ end
 # returns a PtrString and the next position to parse
 # a PtrString is a semi-lazy, internal-only representation
 # that notes whether escape characters were encountered while parsing
-# or not. It allows togeneric, _tobjson, etc. to deal
+# or not. It allows materialize, _binary, etc. to deal
 # with the string data appropriately without forcing a String allocation
 # should NEVER be visible to users though!
 @inline function parsestring(x::LazyValue)
@@ -302,7 +326,7 @@ end
 # for object/array/number, we pass a no-op keyvalfunc (pass)
 # to parseobject/parsearray/parsenumber
 # for string, we just ignore the returned PtrString
-# and for bool/null, we call togeneric since it
+# and for bool/null, we call materialize since it
 # is already efficient for skipping
 function skip(x::LazyValue)
     T = gettype(x)
@@ -316,6 +340,6 @@ function skip(x::LazyValue)
     elseif T == JSONTypes.NUMBER
         return parsenumber(x, pass)
     else
-        return togeneric(pass, x)
+        return materialize(pass, x)
     end
 end
