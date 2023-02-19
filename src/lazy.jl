@@ -22,9 +22,9 @@ Currently supported keyword arguments include:
 function lazy end
 
 lazy(io::Union{IO, Base.AbstractCmd}; kw...) = lazy(Base.read(io); kw...)
+lazy(io::IOStream; kw...) = lazy(Mmap.mmap(io); kw...)
 
-function lazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
-    buf = checkfile(buf)
+@inline function lazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
     len = getlength(buf)
     if len == 0
         error = UnexpectedEOF

@@ -5,9 +5,6 @@ invalid JSON at byte position $pos while parsing type $T: $error
 $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 """))
 
-checkfile(buf::AbstractString) = buf isa AbstractString && sizeof(buf) < 256 && isfile(buf) ? Mmap.mmap(buf) : buf
-checkfile(buf) = buf
-
 Base.@kwdef struct Options
     float64::Bool = false
     jsonlines::Bool = false
@@ -41,6 +38,15 @@ const TYPES = Types()
 withobjecttype(::Type{O2}) where {O2} = withobjecttype(TYPES, O2)
 witharraytype(::Type{A2}) where {A2} = witharraytype(TYPES, A2)
 withstringtype(::Type{S2}) where {S2} = withstringtype(TYPES, S2)
+
+# bit flag to track mutable/kwdef struct construction abilities
+primitive type StructFlags 8 end
+Base.UInt8(x::StructFlags) = Base.bitcast(UInt8, x)
+StructFlags(x::UInt8) = Base.bitcast(StructFlags, x)
+
+StructFlags(mutable::Bool, kwdef::Bool) = StructFlags(UInt8(mutable ? 1 : 0) | UInt8(kwdef ? 2 : 0))
+Base.propertynames(::StructFlags) = (:mutable, :kwdef)
+Base.getproperty(x::StructFlags, f::Symbol) = f === :mutable ? (UInt8(x) & 1) == 1 : (UInt8(x) & 2) == 2
 
 # scoped enum
 module JSONTypes

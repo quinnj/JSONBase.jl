@@ -72,6 +72,8 @@ mutable struct UndefGuy
     UndefGuy() = new()
 end
 
+JSONBase.mutable(::Type{UndefGuy}) = true
+
 struct E
     id::Int
     a::A
@@ -91,6 +93,8 @@ Base.@kwdef struct G
     name::String
     f::F
 end
+
+JSONBase.kwdef(::Type{G}) = true
 
 struct H
     id::Int
@@ -143,6 +147,8 @@ Base.@kwdef struct System
     shell::Union{Nothing, Dict} = nothing
 end
 
+JSONBase.kwdef(::Type{System}) = true
+
 @testset "JSONBase.materialize" begin
     obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
@@ -174,7 +180,7 @@ end
     @test obj == E(1, A(1, 2, 3, 4))
     obj = JSONBase.materialize("""{ "id": 1, "rate": 2.0, "name": "3"}""", F)
     @test obj == F(1, 2.0, "3")
-    obj = JSONBase.materialize("""{ "id": 1, "rate": 2.0, "name": "3", "f": {"id": 1, "rate": 2.0, "name": "3"}}""", G; kwdef=true)
+    obj = JSONBase.materialize("""{ "id": 1, "rate": 2.0, "name": "3", "f": {"id": 1, "rate": 2.0, "name": "3"}}""", G)
     @test obj == G(1, 2.0, "3", F(1, 2.0, "3"))
     # Dict/Array fields
     obj = JSONBase.materialize("""{ "id": 1, "name": "2", "properties": {"a": 1, "b": 2}, "addresses": ["a", "b"]}""", H)
@@ -194,7 +200,7 @@ end
     # test K
     # @test JSONBase.materialize("""{"id": 1, "value": null}""", K) == K(1, "2", 3.14)
     # Real
-    @test JSONBase.materialize("""{"duration": 3600.0}""", System; kwdef=true) == System(duration=3600.0)
+    @test JSONBase.materialize("""{"duration": 3600.0}""", System) == System(duration=3600.0)
     # struct + jsonlines
     for raw in [
         """

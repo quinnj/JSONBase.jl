@@ -9,10 +9,10 @@ struct File end
     make(::Type{Vector{UInt8}}, x) = Vector{UInt8}(x)
     make(::Type{IOBuffer}, x) = IOBuffer(x)
     function make(::Type{File}, x)
-        path, io = mktemp()
+        _, io = mktemp()
         write(io, x)
-        close(io)
-        return path
+        seekstart(io)
+        return io
     end
     for T in (String, SubString{String}, IOBuffer, Vector{UInt8}, File)
         @test JSONBase.gettype(JSONBase.lazy(make(T, "1"))) == JSONBase.JSONTypes.NUMBER
@@ -120,7 +120,7 @@ struct File end
      Dict("name" => "Deloise", "wins" => [["three of a kind", "5♣"]])]
 end
 
-@testset "Non-default object/array types" for f in (JSONBase.lazy, JSONBase.binary)
+@testset "Non-default object/array types: `JSONBase.$f`" for f in (JSONBase.lazy, JSONBase.binary)
     @test JSONBase.materialize(f("[1,2,3]"); types=JSONBase.witharraytype(Vector{Int})) isa Vector{Int}
     # test objecttype keyword arg
     @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); types=JSONBase.withobjecttype(Dict{String, Int})) isa Dict{String, Int}

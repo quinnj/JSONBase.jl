@@ -18,9 +18,10 @@ similar to LazyValue. The `BinaryValue` can also be materialized via:
 function binary end
 
 binary(io::Union{IO, Base.AbstractCmd}; kw...) = binary(Base.read(io); kw...)
+binary(io::IOStream; kw...) = binary(Mmap.mmap(io); kw...)
 binary(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = binary(lazy(buf; kw...))
 
-function binary(x::LazyValue)
+@inline function binary(x::LazyValue)
     tape = Vector{UInt8}(undef, 128)
     i = 1
     pos, i = binary!(x, tape, i)
@@ -120,7 +121,7 @@ end
 
 include("binaryutils.jl")
 
-function reallocate!(x::LazyValue, tape, i)
+@inline function reallocate!(x::LazyValue, tape, i)
     # println("reallocating...")
     len = getlength(getbuf(x))
     pos = getpos(x)
@@ -154,13 +155,13 @@ end
 end
 
 mutable struct BinaryArrayClosure
-    tape::Vector{UInt8}
+    const tape::Vector{UInt8}
     i::Int
     nelems::Int
 end
 
-@inline function (f::BinaryArrayClosure)(_, v)
-    pos, f.i = binary!(v, f.tape, f.i)
+@inline function (f::BinaryArrayClosure)(::Int, v)
+    pos, f.i = @inline binary!(v, f.tape, f.i)
     f.nelems += 1
     return API.Continue(pos)
 end

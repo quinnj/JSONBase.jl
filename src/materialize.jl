@@ -21,17 +21,17 @@ function materialize end
 
 materialize(io::Union{IO, Base.AbstractCmd}, ::Type{T}=Any; kw...) where {T} = materialize(Base.read(io), T; kw...)
 materialize!(io::Union{IO, Base.AbstractCmd}, x; kw...) = materialize!(Base.read(io), x; kw...)
-materialize(buf::Union{AbstractVector{UInt8}, AbstractString}, ::Type{T}=Any;
-    types::Type{<:Types}=TYPES,
-    mutable::Bool=JSONBase.mutable(T),
-    kwdef::Bool=JSONBase.kwdef(T),
-    kw...) where {T} =
-    materialize(lazy(buf; kw...), T; types, mutable, kwdef)
-materialize!(buf::Union{AbstractVector{UInt8}, AbstractString}, x; types::Type{<:Types}=TYPES, kw...) = materialize!(lazy(buf; kw...), x, types)
+materialize(io::IOStream, ::Type{T}=Any; kw...) where {T} = materialize(Mmap.mmap(io), T; kw...)
+materialize!(io::IOStream, x; kw...) = materialize!(Mmap.mmap(io), x; kw...)
 
-@inline function materialize(x::LazyValue, ::Type{T}=Any; types::Type{<:Types}=TYPES, mutable::Bool=JSONBase.mutable(T), kwdef::Bool=JSONBase.kwdef(T)) where {T}
+materialize(buf::Union{AbstractVector{UInt8}, AbstractString}, ::Type{T}=Any; types::Type{<:Types}=TYPES, kw...) where {T} =
+    materialize(lazy(buf; kw...), T; types)
+materialize!(buf::Union{AbstractVector{UInt8}, AbstractString}, x; types::Type{<:Types}=TYPES, kw...) =
+    materialize!(lazy(buf; kw...), x, types)
+
+@inline function materialize(x::LazyValue, ::Type{T}=Any; types::Type{<:Types}=TYPES) where {T}
     local y
-    pos = materialize(_x -> (y = _x), x, mutable ? Mutable{T} : kwdef ? KwDef{T} : T, types)
+    pos = materialize(_x -> (y = _x), x, T, types)
     checkendpos(x, pos, T)
     return y
 end
@@ -57,21 +57,12 @@ end
 
 defaults(_) = (;)
 
-struct Mutable{T} end
-mutable(::Type{<:Mutable}) = true
 mutable(_) = false
-unwraptype(::Type{Mutable{T}}) where {T} = T
-
-struct KwDef{T} end
-kwdef(::Type{<:KwDef}) = true
 kwdef(_) = false
-unwraptype(::Type{KwDef{T}}) where {T} = T
 
-unwraptype(::Type{T}) where {T} = T
-
-function materialize(x::BinaryValue, ::Type{T}=Any; types::Type{<:Types}=TYPES, mutable::Bool=JSONBase.mutable(T), kwdef::Bool=JSONBase.kwdef(T)) where {T}
+function materialize(x::BinaryValue, ::Type{T}=Any; types::Type{<:Types}=TYPES) where {T}
     local y
-    materialize(_x -> (y = _x), x, mutable ? Mutable{T} : kwdef ? KwDef{T} : T, types)
+    materialize(_x -> (y = _x), x, T, types)
     return y
 end
 
@@ -92,7 +83,7 @@ _valtype(d::AbstractVector{<:Pair}) = eltype(d).parameters[2]
 _valtype(_) = Any
 
 @inline function (f::GenericObjectClosure{O, T})(key, val) where {O, T}
-    pos = materialize(x -> _push!(f.keyvals, tostring(stringtype(T), key), x), val, _valtype(f.keyvals), T)
+    pos = _materialize(x -> _push!(f.keyvals, tostring(stringtype(T), key), x), val, _valtype(f.keyvals), T)
     return API.Continue(pos)
 end
 
@@ -101,13 +92,16 @@ struct GenericArrayClosure{A, T}
 end
 
 @inline function (f::GenericArrayClosure{A, T})(i, val) where {A, T}
-    pos = materialize(x -> push!(f.arr, x), val, eltype(A), T)
+    pos = _materialize(x -> push!(f.arr, x), val, eltype(A), T)
     return API.Continue(pos)
 end
 
+@noinline _materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, types::Type{Types{O, A, S}}=TYPES) where {F, T, O, A, S} =
+    materialize(valfunc, x, T, types)
+
 # Note: when calling this method manually, we don't do the checkendpos check
 # which means if the input JSON has invalid trailing characters, no error will be thrown
-function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, types::Type{Types{O, A, S}}=TYPES) where {F, T, O, A, S}
+@inline function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, types::Type{Types{O, A, S}}=TYPES) where {F, T, O, A, S}
     type = gettype(x)
     if type == JSONTypes.OBJECT
         if T === Any || dictlike(T)
@@ -117,17 +111,15 @@ function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any
             return pos
         else
             if mutable(T)
-                TT = unwraptype(T)
-                y = TT()
+                y = T()
                 pos = materialize!(x, y, types)
                 valfunc(y)
                 return pos
             elseif kwdef(T)
-                TT = unwraptype(T)
                 kws = Pair{Symbol, Any}[]
-                c = KwClosure{TT, types}(kws)
+                c = KwClosure{T, types}(kws)
                 pos = parseobject(x, c).pos
-                y = TT(; kws...)
+                y = T(; kws...)
                 valfunc(y)
                 return pos
             else
@@ -164,11 +156,11 @@ function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any
             valfunc(tostring(T, str))
             return pos
         end
-    elseif type == JSONTypes.NUMBER # only LazyValue
+    elseif x isa LazyValue && type == JSONTypes.NUMBER # only LazyValue
         return parsenumber(x, valfunc)
-    elseif type == JSONTypes.INT # only BinaryValue
+    elseif x isa BinaryValue && type == JSONTypes.INT # only BinaryValue
         return parseint(x, valfunc)
-    elseif type == JSONTypes.FLOAT # only BinaryValue
+    elseif x isa BinaryValue && type == JSONTypes.FLOAT # only BinaryValue
         return parsefloat(x, valfunc)
     elseif type == JSONTypes.NULL
         valfunc(nothing)
@@ -218,26 +210,26 @@ end
                     if $(dictlike(ftype))
                         c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
                         _types = withobjecttype(types, $ftype)
-                        pos = materialize(c, val, $ftype, _types)
+                        pos = _materialize(c, val, $ftype, _types)
                         return API.Continue(pos)
                     else
                         c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
-                        pos = materialize(c, val, $ftype, types)
+                        pos = _materialize(c, val, $ftype, types)
                         return API.Continue(pos)
                     end
                 elseif type == JSONTypes.ARRAY
                     c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
                     _types = witharraytype(types, $ftype)
-                    pos = materialize(c, val, $ftype, _types)
+                    pos = _materialize(c, val, $ftype, _types)
                     return API.Continue(pos)
                 elseif type == JSONTypes.STRING
                     c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
                     _types = withstringtype(types, $ftype)
-                    pos = materialize(c, val, $ftype, _types)
+                    pos = _materialize(c, val, $ftype, _types)
                     return API.Continue(pos)
                 else
                     c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
-                    pos = materialize(c, val, $ftype, types)
+                    pos = _materialize(c, val, $ftype, types)
                     return API.Continue(pos)
                 end
             end
