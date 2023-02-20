@@ -122,6 +122,7 @@ end
 
 @testset "Non-default object/array types: `JSONBase.$f`" for f in (JSONBase.lazy, JSONBase.binary)
     @test JSONBase.materialize(f("[1,2,3]"); types=JSONBase.witharraytype(Vector{Int})) isa Vector{Int}
+    @test JSONBase.materialize(f("[1,2,3]"); types=JSONBase.witharraytype(Set{Int})) isa Set{Int}
     # test objecttype keyword arg
     @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); types=JSONBase.withobjecttype(Dict{String, Int})) isa Dict{String, Int}
     @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); types=JSONBase.withobjecttype(Vector{Pair{String, Int}})) isa Vector{Pair{String, Int}}

@@ -198,7 +198,7 @@ JSONBase.kwdef(::Type{System}) = true
     @test JSONBase.materialize("""{"id": 1, "name": "2", "rate": 3}""", J) == J(1, "2", 3)
     @test JSONBase.materialize("""{"id": null, "name": null, "rate": 3.14}""", J) == J(nothing, nothing, 3.14)
     # test K
-    # @test JSONBase.materialize("""{"id": 1, "value": null}""", K) == K(1, "2", 3.14)
+    @test JSONBase.materialize("""{"id": 1, "value": null}""", K) == K(1, missing)
     # Real
     @test JSONBase.materialize("""{"duration": 3600.0}""", System) == System(duration=3600.0)
     # struct + jsonlines

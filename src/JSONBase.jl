@@ -69,6 +69,7 @@ end # module
        # support jsonlines output
  # JSONBase.materialize that works on LazyValue, or BSONValue
    # JSONBase.fields overload to give names, types, excludes, defaults, etc.
+   # docs for kwdef/mutable
  # package docs
  # tojson
  # topretty

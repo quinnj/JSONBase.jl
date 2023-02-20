@@ -21,9 +21,10 @@ const OPTIONS = Options()
 struct Types{O, A, S} end
 
 Types(;
-    objecttype::Type=Dict{String, Any},
-    arraytype::Type=Vector{Any},
-    stringtype::Type=String) = Types{objecttype, arraytype, stringtype}
+    stringtype::Type=String,
+    objecttype::Type=Dict{stringtype, Any},
+    arraytype::Type=Vector{Any}) =
+    Types{objecttype, arraytype, stringtype}
 
 objecttype(::Type{Types{O, A, S}}) where {O, A, S} = O
 arraytype(::Type{Types{O, A, S}}) where {O, A, S} = A
@@ -35,18 +36,9 @@ withstringtype(::Type{Types{O, A, S}}, ::Type{S2}) where {O, A, S, S2} = Types{O
 
 const TYPES = Types()
 
-withobjecttype(::Type{O2}) where {O2} = withobjecttype(TYPES, O2)
-witharraytype(::Type{A2}) where {A2} = witharraytype(TYPES, A2)
-withstringtype(::Type{S2}) where {S2} = withstringtype(TYPES, S2)
-
-# bit flag to track mutable/kwdef struct construction abilities
-primitive type StructFlags 8 end
-Base.UInt8(x::StructFlags) = Base.bitcast(UInt8, x)
-StructFlags(x::UInt8) = Base.bitcast(StructFlags, x)
-
-StructFlags(mutable::Bool, kwdef::Bool) = StructFlags(UInt8(mutable ? 1 : 0) | UInt8(kwdef ? 2 : 0))
-Base.propertynames(::StructFlags) = (:mutable, :kwdef)
-Base.getproperty(x::StructFlags, f::Symbol) = f === :mutable ? (UInt8(x) & 1) == 1 : (UInt8(x) & 2) == 2
+withobjecttype(::Type{O2}) where {O2} = Types(; objecttype=O2)
+witharraytype(::Type{A2}) where {A2} =  Types(; arraytype=A2)
+withstringtype(::Type{S2}) where {S2} = Types(; stringtype=S2)
 
 # scoped enum
 module JSONTypes
