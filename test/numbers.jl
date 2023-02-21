@@ -1,6 +1,6 @@
 using Test, JSONBase
 
-@testset "JSONBase.parsenumber conversion: `JSONBase.$f`" for f in (JSONBase.lazy, JSONBase.binary)
+@testset "Numbers tests 1" for f in (JSONBase.lazy, JSONBase.binary)
     @test JSONBase.materialize(f("1")) === Int64(1)
     @test JSONBase.materialize(f("1 ")) === Int64(1)
     @test JSONBase.materialize(f("-1")) === Int64(-1)
@@ -13,7 +13,9 @@ using Test, JSONBase
     # @test JSONBase.materialize(f("1f23")) === 1f23
     # @test JSONBase.materialize(f("1F23")) === 1f23
     @test JSONBase.materialize(f("100000000000000000000000")) === 100000000000000000000000
+end
 
+@testset "Numbers tests 2" for f in (JSONBase.lazy, JSONBase.binary)
     @test JSONBase.materialize(f("428.E+03")) === 428e3
     @test JSONBase.materialize(f("1e+1")) === 10.0
     @test JSONBase.materialize(f("1e-1")) === 0.1
@@ -28,7 +30,9 @@ using Test, JSONBase
     @test JSONBase.materialize(f("170141183460469231731687303715884105727")) === 170141183460469231731687303715884105727
     # only == here because BigInt don't compare w/ ===
     @test JSONBase.materialize(f("170141183460469231731687303715884105728")) == 170141183460469231731687303715884105728
+end
 
+@testset "Zeros" for f in (JSONBase.lazy, JSONBase.binary)
     # zeros
     @test JSONBase.materialize(f("0")) === 0
     @test JSONBase.materialize(f("0e0")) === 0.0
@@ -62,7 +66,9 @@ using Test, JSONBase
     @test JSONBase.materialize(f("4e-324")) === 5e-324
     @test JSONBase.materialize(f("3e-324")) === 5e-324
     @test JSONBase.materialize(f("2e-324")) === 0.0
+end
 
+@testset "errors" for f in (JSONBase.lazy, JSONBase.binary)
     @test_throws ArgumentError JSONBase.materialize(f("1e"))
     @test_throws ArgumentError JSONBase.materialize(f("1.0ea"))
     @test_throws ArgumentError JSONBase.materialize(f("1e+"))

@@ -3,7 +3,8 @@
     JSONBase.materialize(json, T)
 
 Materialize a JSON input (string, vector, stream, LazyValue, BinaryValue, etc.) into a generic
-Julia representation (Dict, Array, etc.) (1st method). Specifically, the following default materializations are used:
+Julia representation (Dict, Array, etc.) (1st method), or construct an instance of type `T` from JSON input (2nd method).
+Specifically, the following default materializations are used for untyped materialization:
   * JSON object => `Dict{String, Any}`
   * JSON array => `Vector{Any}`
   * JSON string => `String`
@@ -18,11 +19,17 @@ are used, like:
   * `types=JSONBase.Types(arraytype=Set{Any})`
   * `types=JSONBase.Types(stringtype=Symbol)`
 
+When a type `T` is given for materialization, there are 3 construction "strategies" available:
+  * `JSONBase.mutable(T)`: an instance is constructed via `T()`, then fields are set via `setproperty!(obj, field, value)`
+  * `JSONBase.kwdef(T)`: an instance is constructed via `T(; field=value...)`, i.e. passed as keyword argumnents to the type constructor
+  * Default: an instance is constructed by passing `T(val1, val2, ...)` to the type constructor
+    values are matched on JSON object keys to field names; this corresponds to the "default" constructor
+    structs have in Julia
+
 Supported keyword arguments include:
   * `jsonlines`: 
   * `float64`: 
-  * `objecttype`: 
-  * `arraytype`: 
+  * `types`: 
 """
 function materialize end
 
@@ -261,33 +268,9 @@ end
         str = String(fname)
         pushfirst!(ex.args, quote
             if Selectors.eq(key, $str)
-                type = gettype(val)
-                if type == JSONTypes.OBJECT
-                    if $(dictlike(ftype))
-                        c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
-                        _types = withobjecttype(types, $ftype)
-                        pos = _materialize(c, val, $ftype, _types)
-                        return API.Continue(pos)
-                    else
-                        c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
-                        pos = _materialize(c, val, $ftype, types)
-                        return API.Continue(pos)
-                    end
-                elseif type == JSONTypes.ARRAY
-                    c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
-                    _types = witharraytype(types, $ftype)
-                    pos = _materialize(c, val, $ftype, _types)
-                    return API.Continue(pos)
-                elseif type == JSONTypes.STRING
-                    c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
-                    _types = withstringtype(types, $ftype)
-                    pos = _materialize(c, val, $ftype, _types)
-                    return API.Continue(pos)
-                else
-                    c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
-                    pos = _materialize(c, val, $ftype, types)
-                    return API.Continue(pos)
-                end
+                c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
+                pos = _materialize(c, val, $ftype, types)
+                return API.Continue(pos)
             end
         end)
     end
