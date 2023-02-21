@@ -1,6 +1,6 @@
 using Test, JSONBase
 
-@testset "Numbers tests 1" for f in (JSONBase.lazy, JSONBase.binary)
+@testset "Numbers tests 1: `$f`" for f in (JSONBase.lazy, JSONBase.binary)
     @test JSONBase.materialize(f("1")) === Int64(1)
     @test JSONBase.materialize(f("1 ")) === Int64(1)
     @test JSONBase.materialize(f("-1")) === Int64(-1)
@@ -15,7 +15,7 @@ using Test, JSONBase
     @test JSONBase.materialize(f("100000000000000000000000")) === 100000000000000000000000
 end
 
-@testset "Numbers tests 2" for f in (JSONBase.lazy, JSONBase.binary)
+@testset "Numbers tests 2: `$f`" for f in (JSONBase.lazy, JSONBase.binary)
     @test JSONBase.materialize(f("428.E+03")) === 428e3
     @test JSONBase.materialize(f("1e+1")) === 10.0
     @test JSONBase.materialize(f("1e-1")) === 0.1
@@ -32,7 +32,7 @@ end
     @test JSONBase.materialize(f("170141183460469231731687303715884105728")) == 170141183460469231731687303715884105728
 end
 
-@testset "Zeros" for f in (JSONBase.lazy, JSONBase.binary)
+@testset "Zeros: `$f`" for f in (JSONBase.lazy, JSONBase.binary)
     # zeros
     @test JSONBase.materialize(f("0")) === 0
     @test JSONBase.materialize(f("0e0")) === 0.0
@@ -53,6 +53,10 @@ end
     @test JSONBase.materialize(f("-0e292")) === 0.0
     @test JSONBase.materialize(f("-0e347")) == big"0.0"
     @test JSONBase.materialize(f("-0e348")) == big"0.0"
+    @test JSONBase.materialize(f("2e-324")) === 0.0
+end
+
+@testset "Extremes: `$f`" for f in (JSONBase.lazy, JSONBase.binary)
     @test JSONBase.materialize(f("1e310")) == big"1e310"
     @test JSONBase.materialize(f("-1e310")) == big"-1e310"
     @test JSONBase.materialize(f("1e-305")) === 1e-305
@@ -65,10 +69,9 @@ end
     @test JSONBase.materialize(f("5e-324")) === 5e-324
     @test JSONBase.materialize(f("4e-324")) === 5e-324
     @test JSONBase.materialize(f("3e-324")) === 5e-324
-    @test JSONBase.materialize(f("2e-324")) === 0.0
 end
 
-@testset "errors" for f in (JSONBase.lazy, JSONBase.binary)
+@testset "Number errors: `$f`" for f in (JSONBase.lazy, JSONBase.binary)
     @test_throws ArgumentError JSONBase.materialize(f("1e"))
     @test_throws ArgumentError JSONBase.materialize(f("1.0ea"))
     @test_throws ArgumentError JSONBase.materialize(f("1e+"))
