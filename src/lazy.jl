@@ -70,7 +70,7 @@ API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? API.ObjectLike() :
 
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
-function lazy(buf, pos, len, b, opts)
+@inline function lazy(buf, pos, len, b, opts)
     if opts.jsonlines
         return LazyValue(buf, pos, JSONTypes.ARRAY, opts)
     elseif b == UInt8('{')
@@ -107,6 +107,9 @@ function lazy(buf, pos, len, b, opts)
     invalid(error, buf, pos, Any)
 end
 
+@noinline _parseobject(keyvalfunc::F, x::LazyValue) where {F} =
+    parseobject(keyvalfunc, x)
+
 # core JSON object parsing function
 # takes a `keyvalfunc` that is applied to each key/value pair
 # `keyvalfunc` is provided a PtrString => LazyValue pair
@@ -114,10 +117,11 @@ end
 # this is done automatically in selection syntax via `keyvaltostring` transformer
 # returns an API.Continue(pos) value that notes the next position where parsing should
 # continue (selection syntax requires API.Continue to be returned from foreach)
-@inline function parseobject(x::LazyValue, keyvalfunc::F) where {F}
+@inline function parseobject(keyvalfunc::F, x::LazyValue) where {F}
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)
+    opts = getopts(x)
     b = getbyte(buf, pos)
     if b != UInt8('{')
         error = ExpectedOpeningObjectChar
@@ -139,7 +143,7 @@ end
         pos += 1
         @nextbyte
         # we're now positioned at the start of the value
-        val = lazy(buf, pos, len, b, getopts(x))
+        val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(key, val)
         # if ret is not an API.Continue, then we're 
         # short-circuiting parsing via selection syntax
@@ -205,6 +209,9 @@ macro jsonlines_checks()
     end)
 end
 
+@noinline _parsearray(keyvalfunc::F, x::LazyValue) where {F} =
+    parsearray(keyvalfunc, x)
+
 # core JSON array parsing function
 # takes a `keyvalfunc` that is applied to each index => value element
 # `keyvalfunc` is provided a Int => LazyValue pair
@@ -212,7 +219,7 @@ end
 # so we use the index as the key
 # returns an API.Continue(pos) value that notes the next position where parsing should
 # continue (selection syntax requires API.Continue to be returned from foreach)
-@inline function parsearray(x::LazyValue, keyvalfunc::F) where {F}
+@inline function parsearray(keyvalfunc::F, x::LazyValue) where {F}
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)
@@ -293,11 +300,14 @@ end
     invalid(error, buf, pos, "string")
 end
 
+@noinline _parsenumber(valfunc::F, x::LazyValue) where {F} =
+    parsenumber(valfunc, x)
+
 # core JSON number parsing function
 # we rely on functionality in Parsers to help infer what kind
 # of number we're parsing; valid return types include:
 # Int64, Int128, BigInt, Float64 or BigFloat
-@inline function parsenumber(x::LazyValue, valfunc::F) where {F}
+@inline function parsenumber(valfunc::F, x::LazyValue) where {F}
     buf, pos = getbuf(x), getpos(x)
     len = getlength(buf)
     b = getbyte(buf, pos)
@@ -328,18 +338,18 @@ end
 # for string, we just ignore the returned PtrString
 # and for bool/null, we call materialize since it
 # is already efficient for skipping
-function skip(x::LazyValue)
+@inline function skip(x::LazyValue)
     T = gettype(x)
     if T == JSONTypes.OBJECT
-        return parseobject(x, pass).pos
+        return _parseobject(pass, x).pos
     elseif T == JSONTypes.ARRAY
-        return parsearray(x, pass).pos
+        return _parsearray(pass, x).pos
     elseif T == JSONTypes.STRING
         _, pos = parsestring(x)
         return pos
     elseif T == JSONTypes.NUMBER
-        return parsenumber(x, pass)
+        return _parsenumber(pass, x)
     else
-        return materialize(pass, x)
+        return _materialize(pass, x)
     end
 end

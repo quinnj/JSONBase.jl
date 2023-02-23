@@ -29,9 +29,9 @@ keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
 function API.foreach(f, x::Union{LazyValue, BinaryValue})
     if gettype(x) == JSONTypes.OBJECT
-        return parseobject(x, keyvaltostring(f))
+        return parseobject(keyvaltostring(f), x)
     elseif gettype(x) == JSONTypes.ARRAY
-        return parsearray(x, f)
+        return parsearray(f, x)
     else
         throw(ArgumentError("`$x` is not an object or array and not eligible for selection syntax"))
     end
@@ -68,8 +68,7 @@ end # module
        # use struct and call tojson
        # support jsonlines output
  # JSONBase.materialize that works on LazyValue, or BSONValue
-   # JSONBase.fields overload to give names, types, excludes, defaults, etc.
-   # docs for kwdef/mutable
+   # JSONBase.fields overload to give names, excludes, defaults, etc.
  # package docs
  # tojson
  # topretty

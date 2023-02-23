@@ -1,3 +1,5 @@
+macro constfield(ex) esc(VERSION >= v"1.8-" ? Expr(:const, ex) : ex) end
+
 @enum Error InvalidJSON UnexpectedEOF ExpectedOpeningObjectChar ExpectedOpeningQuoteChar ExpectedOpeningArrayChar ExpectedClosingArrayChar ExpectedComma ExpectedColon ExpectedNewline InvalidChar InvalidNumber
 
 @noinline invalid(error, buf, pos, T) = throw(ArgumentError("""
@@ -133,7 +135,7 @@ struct PtrString
     escaped::Bool
 end
 
-function tostring(::Type{String}, x::PtrString)
+@inline function tostring(::Type{String}, x::PtrString)
     if x.escaped
         str = Base.StringVector(x.len)
         len = GC.@preserve str unsafe_unescape_to_buffer(x.ptr, x.len, pointer(str))

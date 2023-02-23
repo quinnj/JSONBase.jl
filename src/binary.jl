@@ -22,7 +22,7 @@ binary(io::IOStream; kw...) = binary(Mmap.mmap(io); kw...)
 binary(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = binary(lazy(buf; kw...))
 
 @inline function binary(x::LazyValue)
-    tape = Vector{UInt8}(undef, 128)
+    tape = Vector{UInt8}(undef, 512)
     i = 1
     pos, i = binary!(x, tape, i)
     buf = getbuf(x)
@@ -138,101 +138,138 @@ macro check(n)
     end)
 end
 
-mutable struct BinaryObjectClosure{T}
+struct BinaryObjectClosure{T}
     tape::Vector{UInt8}
-    i::Int
     x::LazyValue{T}
-    nfields::Int
+    tape_i::Int
+    tape_nfields::Int
 end
 
 @inline function (f::BinaryObjectClosure{T})(k, v) where {T}
     # first we encode the key
-    i = _binary(k, f.tape, f.i, f.x)
+    i = Int(readnumber(f.tape, f.tape_i, Int32))
+    i = _binary(k, f.tape, i, f.x)
     # then we encode the value recursively
-    pos, f.i = binary!(v, f.tape, i)
-    f.nfields += 1
+    pos, i = binary!(v, f.tape, i)
+    # update our i
+    _writenumber(i % Int32, f.tape, f.tape_i)
+    # update our nfields
+    nfields = readnumber(f.tape, f.tape_nfields, Int32)
+    _writenumber(nfields + Int32(1), f.tape, f.tape_nfields)
     return API.Continue(pos)
 end
 
-mutable struct BinaryArrayClosure
-    const tape::Vector{UInt8}
-    i::Int
-    nelems::Int
+struct BinaryArrayClosure
+    tape::Vector{UInt8}
+    tape_i::Int
+    tape_nelems::Int
 end
 
 @inline function (f::BinaryArrayClosure)(::Int, v)
-    pos, f.i = @inline binary!(v, f.tape, f.i)
-    f.nelems += 1
+    i = Int(readnumber(f.tape, f.tape_i, Int32))
+    pos, i = @inline binary!(v, f.tape, i)
+    # update our i
+    _writenumber(i % Int32, f.tape, f.tape_i)
+    # update our nelems
+    nelems = readnumber(f.tape, f.tape_nelems, Int32)
+    _writenumber(nelems + Int32(1), f.tape, f.tape_nelems)
     return API.Continue(pos)
 end
 
 struct BinaryNumberClosure{T}
     tape::Vector{UInt8}
     i::Int
-    newi::Base.RefValue{Int}
+    newi::Ptr{Int}
     x::LazyValue{T}
 end
 
 @inline function (f::BinaryNumberClosure{T})(y::Y) where {T, Y}
-    f.newi[] = _binary(y, f.tape, f.i, f.x, true)
+    i = _binary(y, f.tape, f.i, f.x, true)
+    unsafe_store!(f.newi, i)
     return
 end
 
 @inline function binary!(x::LazyValue, tape, i)
     if gettype(x) == JSONTypes.OBJECT
-        tape_i = i
+        meta_i = i
         @check 1 + 4 + 4
         # skip past our BinaryMeta tape slot for now
-        # skip 8 bytes for total # of bytes (4) and # of fields (4)
-        i += 1 + 4 + 4
+        i += 1
+        # now we're going to create a pointer to where we'll
+        # store the total # of bytes for the object
+        # but we're actually going to use it to keep track of our
+        # current position in the tape while we encode all the
+        # object fields
+        tape_i = i
+        # we're also creating a pointer to where we'll store
+        # the # of fields in the object, which we'll update in our
+        # BinaryObjectClosure for each field we process
+        i += 4
+        tape_nfields = i
+        # we've now skipped 8 bytes for total # of bytes (4) and # of fields (4)
+        i += 4
         # now we can start writing the fields
-        c = BinaryObjectClosure(tape, i, x, 0)
-        pos = parseobject(x, c).pos
+        _writenumber(i % Int32, tape, tape_i)
+        _writenumber(Int32(0), tape, tape_nfields)
+        c = BinaryObjectClosure(tape, x, tape_i, tape_nfields)
+        pos = parseobject(c, x).pos
         # compute SizeMeta, even though we write nfields unconditionally
-        _, sm = sizemeta(c.nfields)
+        _, sm = sizemeta(0)
         # note: we pre-@checked earlier
-        tape[tape_i] = UInt8(BinaryMeta(JSONTypes.OBJECT, sm))
-        # store total # of bytes
-        i = c.i
-        nbytes = (i - tape_i) - # total bytes consumed so far
+        tape[meta_i] = UInt8(BinaryMeta(JSONTypes.OBJECT, sm))
+        # compute and store total # of bytes
+        i = Int(readnumber(tape, tape_i, Int32))
+        nbytes = (i - meta_i) - # total bytes consumed so far
             1 - # for BinaryMeta
             4 - # for total # of bytes
             4 # for # of fields
-        _writenumber(Int32(nbytes), tape, tape_i + 1)
-        # store # of elements
-        _writenumber(Int32(c.nfields), tape, tape_i + 5)
+        _writenumber(nbytes % Int32, tape, tape_i)
+        # store # of elements was stored in ptr_nfields while processing
         return pos, i
     elseif gettype(x) == JSONTypes.ARRAY
         # skip past our BinaryMeta tape slot for now
-        tape_i = i
+        meta_i = i
         @check 1 + 4 + 4
         i += 1
-        # skip 8 bytes for total # of bytes (4) and # of elements (4)
-        i += 8
+        # now we're going to create a pointer to where we'll
+        # store the total # of bytes for the array
+        # but we're actually going to use it to keep track of our
+        # current position in the tape while we encode all the
+        # array elements
+        tape_i = i
+        # we're also creating a pointer to where we'll store
+        # the # of elements in the array, which we'll update in our
+        # BinaryArrayClosure for each element we process
+        i += 4
+        tape_nelems = i
+        # we've now skipped 8 bytes for total # of bytes (4) and # of elements (4)
+        i += 4
         # now we can start writing the elements
-        c = BinaryArrayClosure(tape, i, 0)
-        pos = parsearray(x, c).pos
+        _writenumber(i % Int32, tape, tape_i)
+        _writenumber(Int32(0), tape, tape_nelems)
+        c = BinaryArrayClosure(tape, tape_i, tape_nelems)
+        pos = parsearray(c, x).pos
         # compute SizeMeta, even though we write nelems unconditionally
-        _, sm = sizemeta(c.nelems)
+        _, sm = sizemeta(0)
         # store eltype in BinaryMeta size or 0x1f if not homogenous
-        tape[tape_i] = UInt8(BinaryMeta(JSONTypes.ARRAY, sm))
-        i = c.i
-        nbytes = (i - tape_i) - # total bytes consumed so far
+        tape[meta_i] = UInt8(BinaryMeta(JSONTypes.ARRAY, sm))
+        i = Int(readnumber(tape, tape_i, Int32))
+        nbytes = (i - meta_i) - # total bytes consumed so far
             1 - # for BinaryMeta
             4 - # for total # of bytes
             4 # for # of fields
         # store total # of bytes
-        _writenumber(Int32(nbytes), tape, tape_i + 1)
-        # store # of elements
-        _writenumber(Int32(c.nelems), tape, tape_i + 5)
+        _writenumber(nbytes % Int32, tape, tape_i)
+        # store # of elements was stored in ptr_nelems while processing
         return pos, i
     elseif gettype(x) == JSONTypes.STRING
         y, pos = parsestring(x)
         return pos, _binary(y, tape, i, x)
     elseif gettype(x) == JSONTypes.NUMBER
-        c = BinaryNumberClosure(tape, i, Ref(0), x)
-        pos = parsenumber(x, c)
-        return pos, c.newi[]
+        rx = Ref(0)
+        c = BinaryNumberClosure(tape, i, Base.unsafe_convert(Ptr{Int}, rx), x)
+        pos = GC.@preserve rx parsenumber(c, x)
+        return pos, unsafe_load(c.newi)
     elseif gettype(x) == JSONTypes.NULL
         @check 1
         tape[i] = UInt8(BinaryMeta(JSONTypes.NULL))
@@ -263,7 +300,7 @@ end
     tape[i] = UInt8(BinaryMeta(JSONTypes.STRING, sm))
     i += 1
     if !embedded_size
-        i = _writenumber(Int32(n), tape, i)
+        i = _writenumber(n % Int32, tape, i)
     end
     return unsafe_copyto!(y, tape, i, x)
 end
@@ -428,12 +465,15 @@ end
     return unsafe_load(ptr)
 end
 
+@noinline _parseobject(keyvalfunc::F, x::BinaryValue) where {F} =
+    parseobject(keyvalfunc, x)
+
 # core object processing function for binary format
 # we're really just reading the number of fields
 # then looping over them to call keyvalfunc on the
 # key-value pairs.
 # follows the same rules as parseobject on LazyValue for returning
-@inline function parseobject(x::BinaryValue, keyvalfunc::F) where {F}
+@inline function parseobject(keyvalfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -453,7 +493,10 @@ end
     return API.Continue(pos)
 end
 
-@inline function parsearray(x::BinaryValue, keyvalfunc::F) where {F}
+@noinline _parsearray(keyvalfunc::F, x::BinaryValue) where {F} =
+    parsearray(keyvalfunc, x)
+
+@inline function parsearray(keyvalfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -491,11 +534,14 @@ end
     return PtrString(pointer(tape, pos), len, false), pos + len
 end
 
+@noinline _parseint(valfunc::F, x::BinaryValue) where {F} =
+    parseint(valfunc, x)
+
 # reading an integer from binary format involves
 # inspecting the BinaryMeta byte to determine the
 # # of bytes the integer takes for encoding,
 # or switching to BigInt decoding if the embedded size is 0
-@inline function parseint(x::BinaryValue, valfunc::F) where {F}
+@inline function parseint(valfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -524,7 +570,10 @@ end
     return pos + sz
 end
 
-@inline function parsefloat(x::BinaryValue, valfunc::F) where {F}
+@noinline _parsefloat(valfunc::F, x::BinaryValue) where {F} =
+    parsefloat(valfunc, x)
+
+@inline function parsefloat(valfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))

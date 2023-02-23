@@ -33,6 +33,14 @@ Supported keyword arguments include:
 """
 function materialize end
 
+"""
+    JSONBase.materialize!(json, x)
+
+Similar to [`materialize`](@ref), but materializes into an existing object `x`,
+which supports the "mutable" strategy for construction; that is,
+JSON object keys are matched to field names and `setpropty!(x, field, value)` is called.
+"""
+
 materialize(io::Union{IO, Base.AbstractCmd}, ::Type{T}=Any; kw...) where {T} = materialize(Base.read(io), T; kw...)
 materialize!(io::Union{IO, Base.AbstractCmd}, x; kw...) = materialize!(Base.read(io), x; kw...)
 materialize(io::IOStream, ::Type{T}=Any; kw...) where {T} = materialize(Mmap.mmap(io), T; kw...)
@@ -43,13 +51,23 @@ materialize(buf::Union{AbstractVector{UInt8}, AbstractString}, ::Type{T}=Any; ty
 materialize!(buf::Union{AbstractVector{UInt8}, AbstractString}, x; types::Type{Types{O, A, S}}=TYPES, kw...) where {O, A, S} =
     materialize!(lazy(buf; kw...), x, types)
 
-@inline function materialize(x::LazyValue, ::Type{T}=Any; types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}
-    local y
-    pos = materialize(_x -> (y = _x), x, T, types)
-    checkendpos(x, pos, T)
-    return y
+mutable struct AnyClosure
+    x::Any
+    AnyClosure() = new()
 end
 
+@inline (f::AnyClosure)(x) = f.x = x
+
+@inline function materialize(x::LazyValue, ::Type{T}=Any; types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}
+    y = AnyClosure()
+    pos = materialize(y, x, T, types)
+    checkendpos(x, pos, T)
+    return y.x
+end
+
+# for LazyValue, if x started at the beginning of the JSON input,
+# then we want to ensure that the entire input was consumed
+# and error if there are any trailing invalid JSON characters
 @inline checkendpos(x::LazyValue, pos, ::Type{T}) where {T} = getpos(x) == 1 && _checkendpos(x, pos, T)
 
 function _checkendpos(x::LazyValue, pos, ::Type{T}) where {T}
@@ -69,7 +87,23 @@ function _checkendpos(x::LazyValue, pos, ::Type{T}) where {T}
     return nothing
 end
 
-defaults(_) = (;)
+"""
+    JSONBase.fields(T)
+
+Overload used by JSONBase during materialization and writing
+to override default field names, values, properties.
+
+An example definition for a custom type `MyType` would be:
+
+```julia
+JSONBase.fields(::Type{<:MyType}) = (
+    field1 = (jsonkey="field_1", default=10)
+)
+```
+"""
+function fields end
+
+fields(_) = (;)
 
 """
     JSONBase.mutable(T)
@@ -124,13 +158,23 @@ struct GenericObjectClosure{O, T}
     keyvals::O
 end
 
-#TODO: figure out if we should keep this; I don't love it
+struct GenericObjectValFunc{O, K, T}
+    keyvals::O
+    key::K
+end
+
+@inline (f::GenericObjectValFunc{O, K, T})(x) where {O, K, T} =
+    addkeyval!(f.keyvals, tostring(_keytype(f.keyvals, T), f.key), x)
+
+# `dictlike` controls whether a type eagerly "slurps up"
+# all key-value pairs from a JSON object, otherwise
+# the type will recurse into materialize(json, T)
 dictlike(::Type{<:AbstractDict}) = true
 dictlike(::Type{<:AbstractVector{<:Pair}}) = true
 dictlike(_) = false
 
-_push!(d::AbstractDict, k, v) = d[k] = v
-_push!(d::AbstractVector, k, v) = push!(d, k => v)
+@inline addkeyval!(d::AbstractDict, k, v) = d[k] = v
+@inline addkeyval!(d::AbstractVector, k, v) = push!(d, k => v)
 
 _keytype(d::AbstractDict, ::Type{Types{O, A, S}}) where {O, A, S} = keytype(d)
 _keytype(d::AbstractVector{<:Pair}, ::Type{Types{O, A, S}}) where {O, A, S} = eltype(d).parameters[1]
@@ -140,7 +184,7 @@ _valtype(d::AbstractVector{<:Pair}) = eltype(d).parameters[2]
 _valtype(_) = Any
 
 @inline function (f::GenericObjectClosure{O, T})(key, val) where {O, T}
-    pos = _materialize(x -> _push!(f.keyvals, tostring(_keytype(f.keyvals, T), key), x), val, _valtype(f.keyvals), T)
+    pos = _materialize(GenericObjectValFunc{O, typeof(key), T}(f.keyvals, key), val, _valtype(f.keyvals), T)
     return API.Continue(pos)
 end
 
@@ -148,8 +192,15 @@ struct GenericArrayClosure{A, T}
     arr::A
 end
 
+struct GenericArrayValFunc{A, T}
+    arr::A
+end
+
+@inline (f::GenericArrayValFunc{A, T})(x) where {A, T} =
+    push!(f.arr, x)
+
 @inline function (f::GenericArrayClosure{A, T})(i, val) where {A, T}
-    pos = _materialize(x -> push!(f.arr, x), val, eltype(A), T)
+    pos = _materialize(GenericArrayValFunc{A, T}(f.arr), val, eltype(A), T)
     return API.Continue(pos)
 end
 
@@ -166,7 +217,7 @@ initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
     if type == JSONTypes.OBJECT
         if T === Any || dictlike(T)
             d = O()
-            pos = parseobject(x, GenericObjectClosure{O, types}(d)).pos
+            pos = parseobject(GenericObjectClosure{O, types}(d), x).pos
             valfunc(d)
             return pos
         else
@@ -178,7 +229,7 @@ initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
             elseif kwdef(T)
                 kws = Pair{Symbol, Any}[]
                 c = KwClosure{T, types}(kws)
-                pos = parseobject(x, c).pos
+                pos = parseobject(c, x).pos
                 y = T(; kws...)
                 valfunc(y)
                 return pos
@@ -187,7 +238,7 @@ initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
                 N = fieldcount(T)
                 vec = Vector{Any}(undef, N)
                 c = StructClosure{T, types}(vec)
-                pos = parseobject(x, c).pos
+                pos = parseobject(c, x).pos
                 constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
                 construct(T, constructor, vec, valfunc)
                 return pos
@@ -196,12 +247,12 @@ initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
     elseif type == JSONTypes.ARRAY
         if T === Any
             a = initarray(A)
-            pos = parsearray(x, GenericArrayClosure{A, types}(a)).pos
+            pos = parsearray(GenericArrayClosure{A, types}(a), x).pos
             valfunc(a)
             return pos
         else
             a = initarray(T)
-            pos = parsearray(x, GenericArrayClosure{T, types}(a)).pos
+            pos = parsearray(GenericArrayClosure{T, types}(a), x).pos
             valfunc(a)
             return pos
         end
@@ -216,11 +267,11 @@ initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
             return pos
         end
     elseif x isa LazyValue && type == JSONTypes.NUMBER # only LazyValue
-        return parsenumber(x, valfunc)
+        return parsenumber(valfunc, x)
     elseif x isa BinaryValue && type == JSONTypes.INT # only BinaryValue
-        return parseint(x, valfunc)
+        return parseint(valfunc, x)
     elseif x isa BinaryValue && type == JSONTypes.FLOAT # only BinaryValue
-        return parsefloat(x, valfunc)
+        return parsefloat(valfunc, x)
     elseif type == JSONTypes.NULL
         if T !== Any && T >: Missing
             valfunc(missing)
@@ -262,10 +313,12 @@ end
     ex = quote
         return API.Continue()
     end
+    fds = fields(T)
     for i = 1:N
         fname = fieldname(T, i)
+        field = get(fds, fname, nothing)
         ftype = fieldtype(T, i)
-        str = String(fname)
+        str = field !== nothing && haskey(field, :jsonkey) ? field.jsonkey : String(fname)
         pushfirst!(ex.args, quote
             if Selectors.eq(key, $str)
                 c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
@@ -280,9 +333,11 @@ end
     return ex
 end
 
-@inline function getval(::Type{T}, vec, i) where {T}
+@inline function getval(::Type{T}, vec, nm, i) where {T}
     isassigned(vec, i) && return vec[i] # big perf win to do ::fieldtype(T, i) here, but at the cost of not allowing convert to work in constructor
-    return get(defaults(T), fieldname(T, i), nothing)
+    fds = fields(T)
+    field = get(fds, nm, nothing)
+    return field !== nothing && haskey(field, :default) ? field.default : nothing
 end
 
 @generated function construct(::Type{T}, constructor, vec, valfunc::F) where {T, F}
@@ -293,7 +348,7 @@ end
     end
     cons = ex.args[2].args[2]
     for i = 1:N
-        push!(cons.args, :(getval(T, vec, $i)))
+        push!(cons.args, :(getval(T, vec, $(Meta.quot(fieldname(T, i))), $i)))
     end
     return ex
 end
@@ -339,5 +394,5 @@ end
 
 function materialize!(x::Union{LazyValue, BinaryValue}, y::T, types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}
     c = MutableClosure{T, types}(y)
-    return parseobject(x, c).pos
+    return parseobject(c, x).pos
 end
