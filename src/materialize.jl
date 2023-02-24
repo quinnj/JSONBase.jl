@@ -51,15 +51,15 @@ materialize(buf::Union{AbstractVector{UInt8}, AbstractString}, ::Type{T}=Any; ty
 materialize!(buf::Union{AbstractVector{UInt8}, AbstractString}, x; types::Type{Types{O, A, S}}=TYPES, kw...) where {O, A, S} =
     materialize!(lazy(buf; kw...), x, types)
 
-mutable struct AnyClosure
-    x::Any
-    AnyClosure() = new()
+mutable struct ConvertClosure{T}
+    x::T
+    ConvertClosure{T}() where {T} = new{T}()
 end
 
-@inline (f::AnyClosure)(x) = f.x = x
+@inline (f::ConvertClosure{T})(x) where {T} = setfield!(f, :x, upcast(T, x))
 
 @inline function materialize(x::LazyValue, ::Type{T}=Any; types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}
-    y = AnyClosure()
+    y = ConvertClosure{T}()
     pos = materialize(y, x, T, types)
     checkendpos(x, pos, T)
     return y.x
@@ -88,9 +88,9 @@ function _checkendpos(x::LazyValue, pos, ::Type{T}) where {T}
 end
 
 function materialize(x::BinaryValue, ::Type{T}=Any; types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}
-    local y
-    materialize(_x -> (y = _x), x, T, types)
-    return y
+    y = ConvertClosure{T}()
+    materialize(y, x, T, types)
+    return y.x
 end
 
 struct GenericObjectClosure{O, T}
@@ -205,8 +205,8 @@ end
                 # struct fallback
                 N = fieldcount(T)
                 vec = Vector{Any}(undef, N)
-                c = StructClosure{T, types}(vec)
-                pos = parseobject(c, x).pos
+                sc = StructClosure{T, types}(vec)
+                pos = parseobject(sc, x).pos
                 constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
                 construct(T, constructor, vec, valfunc)
                 return pos
@@ -220,29 +220,28 @@ end
             return pos
         elseif T <: Matrix
             # special-case Matrix
-            # must be an array of arrays, where each array element
-            # is the same length
+            # must be an array of arrays, where each array element is the same length
             # we need to peek ahead to figure out the size
             sz = parsearray(x) do i, v
                 # v is the 1st column of our matrix
                 # but we really just want to know the length
-                gettype(v) == JSONTypes.ARRAY || throw(ArgumentError("expected array of arrays for materializing: `$T`"))
+                gettype(v) == JSONTypes.ARRAY || throw(ArgumentError("expected array of arrays for materializing"))
                 ref = Ref(0)
-                c = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
-                GC.@preserve ref parsearray(c, v)
+                alc = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
+                GC.@preserve ref parsearray(alc, v)
                 # by returning the len here, we're short-circuiting the initial
                 # parsearray call
-                return unsafe_load(c.len)
+                return unsafe_load(alc.len)
             end
-            a = T(undef, (sz, sz))
+            m = T(undef, (sz, sz))
             # now we do the actual parsing to fill in our matrix
             cont = parsearray(x) do i, v
                 # i is the column index of our matrix
                 # v is the 1st column of our matrix
-                c = MatrixClosure{T, types}(a, i)
-                return parsearray(c, v)
+                mc = MatrixClosure{T, types}(m, i)
+                return parsearray(mc, v)
             end
-            valfunc(a)
+            valfunc(m)
             return cont.pos
         else
             a = initarray(T)
@@ -252,11 +251,7 @@ end
         end
     elseif type == JSONTypes.STRING
         str, pos = parsestring(x)
-        if T === Any
-            valfunc(tostring(S, str))
-        else
-            valfunc(tostring(T, str))
-        end
+        valfunc(tostring(T, str))
         return pos
     elseif x isa LazyValue && type == JSONTypes.NUMBER # only LazyValue
         return parsenumber(valfunc, x)
@@ -265,11 +260,7 @@ end
     elseif x isa BinaryValue && type == JSONTypes.FLOAT # only BinaryValue
         return parsefloat(valfunc, x)
     elseif type == JSONTypes.NULL
-        if T !== Any && T >: Missing
-            valfunc(missing)
-        else
-            valfunc(nothing)
-        end
+        valfunc(nothing)
         return getpos(x) + (x isa BinaryValue ? 1 : 4)
     elseif type == JSONTypes.TRUE
         valfunc(true)
@@ -327,10 +318,20 @@ end
 end
 
 @inline function getval(::Type{T}, vec, nm, i) where {T}
-    isassigned(vec, i) && return vec[i] # big perf win to do ::fieldtype(T, i) here, but at the cost of not allowing convert to work in constructor
+    FT = fieldtype(T, i)
+    isassigned(vec, i) && return vec[i]::FT
+    # TODO: we could maybe allow an `argtype` option to
+    # fields that would be less restrictive than FT here
+    # one use-case is that I have a custom constructor
+    # that takes `nothing` as a positional arg, but
+    # uses a more type-stable sentinel value for the field if `nothing`
     fds = fields(T)
     field = get(fds, nm, nothing)
-    return field !== nothing && haskey(field, :default) ? field.default : nothing
+    if field !== nothing && haskey(field, :default)
+        return field.default::FT
+    else
+        return nothing::FT
+    end
 end
 
 @generated function construct(::Type{T}, constructor, vec, valfunc::F) where {T, F}
@@ -350,23 +351,23 @@ struct StructClosure{T, types}
     vec::Vector{Any}
 end
 
-struct ApplyStruct
+struct ApplyStruct{T}
     vec::Vector{Any}
 end
 
-@inline (f::ApplyStruct)(i, k, v) = f.vec[i] = v
-@inline (f::StructClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyStruct(f.vec))
+@inline (f::ApplyStruct{T})(i, k, v) where {T} = setindex!(f.vec, upcast(T, k, v), i)
+@inline (f::StructClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyStruct{T}(f.vec))
 
 struct KwClosure{T, types}
     kws::Vector{Pair{Symbol, Any}}
 end
 
-struct ApplyKw
+struct ApplyKw{T}
     kws::Vector{Pair{Symbol, Any}}
 end
 
-@inline (f::ApplyKw)(i, k, v) = push!(f.kws, k => v)
-@inline (f::KwClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyKw(f.kws))
+@inline (f::ApplyKw{T})(i, k, v) where {T} = push!(f.kws, k => upcast(T, k, v))
+@inline (f::KwClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyKw{T}(f.kws))
 
 struct MutableClosure{T, types}
     x::T
@@ -376,7 +377,7 @@ struct ApplyMutable{T}
     x::T
 end
 
-@inline (f::ApplyMutable{T})(i, k, v) where {T} = setproperty!(f.x, k, v)
+@inline (f::ApplyMutable{T})(i, k, v) where {T} = setproperty!(f.x, k, upcast(T, k, v))
 @inline (f::MutableClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyMutable(f.x))
 
 function materialize!(x::Union{LazyValue, BinaryValue}, ::Type{T}, types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}

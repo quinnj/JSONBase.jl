@@ -167,7 +167,7 @@ end
 
 @inline function (f::BinaryArrayClosure)(::Int, v)
     i = Int(readnumber(f.tape, f.tape_i, Int32))
-    pos, i = @inline binary!(v, f.tape, i)
+    pos, i = binary!(v, f.tape, i)
     # update our i
     _writenumber(i % Int32, f.tape, f.tape_i)
     # update our nelems

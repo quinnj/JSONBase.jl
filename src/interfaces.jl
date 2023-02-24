@@ -1,6 +1,8 @@
 module API
 
-export foreach, Continue, fields, mutable, kwdef, JSONType, ObjectLike, ArrayLike
+using Dates, UUIDs
+
+export foreach, Continue, fields, mutable, kwdef, lower, upcast, JSONType, ObjectLike, ArrayLike
 
 """
     JSONBase.foreach(f, x)
@@ -86,6 +88,65 @@ Note this definition works whether `MyType` has type parameters or not due to be
 for *any* `MyType`.
 """
 kwdef(_) = false
+
+"""
+    JSONBase.lower(x)
+    JSONBase.lower(::Type{T}, key, val)
+
+Allow an object `x` to be "lowered" into a JSON-compatible representation.
+The 2nd method allows overloading lower for an object of type `T` for a specific
+key-value representing the field name (as a String) and the field value being serialized.
+This allows customizing the serialization of a specific field of a type without
+needing to clash with other global `lower` methods.
+"""
+function lower end
+
+lower(x) = x
+# allow field-specific lowering for types
+lower(::Type{T}, key, val) where {T} = lower(val)
+
+# some default lowerings for common types
+lower(::Missing) = nothing
+lower(x::Symbol) = String(x)
+lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)
+lower(x::Regex) = x.pattern
+lower(x::Matrix) = eachcol(x)
+
+"""
+    JSONBase.upcast(T, x)
+
+Allow a JSON-natural object `x` to be converted into a more general type `T`.
+This is used to allow for more general types to be used in the
+JSONBase materialization process.
+"""
+function upcast end
+
+upcast(::Type{T}, x) where {T} = convert(T, x)
+
+upcast(::Type{T}, key::Symbol, val) where {T} = upcast(fieldtype(T, key), val)
+@generated function upcast(::Type{T}, key::AbstractString, val) where {T}
+    ex = quote
+        @show T, key, val
+    end
+    for i = 1:fieldcount(T)
+        nm = String(fieldname(T, i))
+        push!(ex.args, :(key == $nm && return upcast($(fieldtype(T, i)), val)))
+    end
+    push!(ex.args, :(return val))
+    return ex
+end
+
+# some default upcasts for common types
+upcast(::Type{T}, ::Nothing) where {T >: Missing} = T === Any ? nothing : missing
+upcast(::Type{T}, x::String) where {T <: Union{VersionNumber, UUID, Dates.TimeType, Regex}} = T(x)
+
+function upcast(::Type{Char}, x::String)
+    if length(x) == 1
+        return x[1]
+    else
+        throw(ArgumentError("invalid `Char` from string value: \"$x\""))
+    end
+end
 
 abstract type JSONType end
 

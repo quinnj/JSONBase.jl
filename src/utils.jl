@@ -135,6 +135,16 @@ struct PtrString
     escaped::Bool
 end
 
+"""
+    JSONBase.tostring(T, x::JSONBase.PtrString)
+
+Convert a `PtrString` to a string of type `T`.
+Happens earlier in the materialization process than `upcast`.
+A utility that string types can overload if they have a more efficient
+conversion method that can avoid the `String` intermediate + allocation.
+"""
+function tostring end
+
 @inline function tostring(::Type{String}, x::PtrString)
     if x.escaped
         str = Base.StringVector(x.len)
@@ -146,30 +156,19 @@ end
     end
 end
 
-Base.String(x::PtrString) = tostring(String, x)
-
 # generic fallback
-tostring(::Type{T}, x::PtrString) where {T} = T(tostring(String, x))
-tostring(U::Union, x::PtrString) = convert(U, tostring(String, x))
+tostring(::Type{T}, x::PtrString) where {T} = tostring(String, x)
 
 _symbol(ptr, len) = ccall(:jl_symbol_n, Ref{Symbol}, (Ptr{UInt8}, Int), ptr, len)
-Base.Symbol(x::PtrString) = x.escaped ? Symbol(tostring(String, x)) : _symbol(x.ptr, x.len)
+
+tostring(::Type{Symbol}, x::PtrString) = x.escaped ? Symbol(tostring(String, x)) : _symbol(x.ptr, x.len)
 
 function tostring(::Type{T}, x::PtrString) where {T <: Enum}
-    sym = Symbol(x)
+    sym = tostring(Symbol, x)
     for (k, v) in Base.Enums.namemap(T)
         v === sym && return T(k)
     end
     throw(ArgumentError("invalid `$T` string value: \"$sym\""))
-end
-
-function tostring(::Type{Char}, x::PtrString)
-    str = tostring(String, x)
-    if length(str) == 1
-        return str[1]
-    else
-        throw(ArgumentError("invalid `Char` from string value: \"$str\""))
-    end
 end
 
 function streq(x::PtrString, y::AbstractString)

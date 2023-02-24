@@ -166,6 +166,17 @@ struct ThreeDates
     time::Time
 end
 
+function JSONBase.upcast(::Type{ThreeDates}, key::Symbol, val)
+    if key == :date
+        return Date(val, dateformat"yyyy_mm_dd")
+    elseif key == :datetime
+        return DateTime(val, dateformat"yyyy/mm/dd HH:MM:SS")
+    elseif key == :time
+        return Time(val, dateformat"HH/MM/SS")
+    end
+    return val
+end
+
 @testset "JSONBase.materialize" begin
     obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
@@ -271,7 +282,8 @@ end
     @test JSONBase.materialize("\"2023-02-23T22:39:02\"", DateTime) == DateTime(2023, 2, 23, 22, 39, 2)
     @test JSONBase.materialize("\"2023-02-23\"", Date) == Date(2023, 2, 23)
     @test JSONBase.materialize("\"22:39:02\"", Time) == Time(22, 39, 2)
-    # @test JSONBase.materialize("{\"date\":\"2023_02_23\",\"datetime\":\"2023/02/23 12:34:56\",\"time\":\"12/34/56\"}", ThreeDates)
+    @test JSONBase.materialize("{\"date\":\"2023_02_23\",\"datetime\":\"2023/02/23 12:34:56\",\"time\":\"12/34/56\"}", ThreeDates) ==
+        ThreeDates(Date(2023, 2, 23), DateTime(2023, 2, 23, 12, 34, 56), Time(12, 34, 56))
     # test Matrix
     @test JSONBase.materialize("[[1,3],[2,4]]", Matrix{Int}) == [1 2; 3 4]
     @test JSONBase.materialize("{\"a\": [[1,3],[2,4]]}", NamedTuple{(:a,),Tuple{Matrix{Int}}}) == (a=[1 2; 3 4],)

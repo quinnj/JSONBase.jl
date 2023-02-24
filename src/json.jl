@@ -1,26 +1,3 @@
-"""
-    JSONBase.lower(x)
-    JSONBase.lower(::Type{T}, key, val)
-
-Allow an object `x` to be "lowered" into a JSON-compatible representation.
-The 2nd method allows overloading lower for an object of type `T` for a specific
-key-value representing the field name (as a String) and the field value being serialized.
-This allows customizing the serialization of a specific field of a type without
-needing to clash with other global `lower` methods.
-"""
-function lower end
-
-lower(x) = x
-# allow field-specific lowering for types
-lower(::Type{T}, key, val) where {T} = lower(val)
-
-# some default lowerings for common types
-lower(::Missing) = nothing
-lower(x::Symbol) = String(x)
-lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)
-lower(x::Regex) = x.pattern
-lower(x::Matrix) = eachcol(x)
-
 sizeguess(::Union{Nothing, Missing}) = 4
 sizeguess(x::Bool) = 5
 sizeguess(x::Integer) = 20
