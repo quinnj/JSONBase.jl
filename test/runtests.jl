@@ -1,4 +1,4 @@
-using Test, JSONBase #, BenchmarkTools, JSON
+using Test, JSONBase, UUIDs, Dates #, BenchmarkTools, JSON
 
 # helper struct for testing reading json from files
 struct File end
@@ -254,3 +254,4 @@ end
 
 include("numbers.jl")
 include("struct.jl")
+include("json.jl")

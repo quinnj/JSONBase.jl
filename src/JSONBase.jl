@@ -2,7 +2,7 @@ module JSONBase
 
 export Selectors
 
-using Mmap
+using Mmap, Dates, UUIDs
 using Parsers
 
 getbuf(x) = getfield(x, :buf)
@@ -16,7 +16,7 @@ include("utils.jl")
 include("interfaces.jl")
 using .API
 
-pass(args...) = API.Continue(0)
+pass(args...) = Continue(0)
 
 include("selectors.jl")
 using .Selectors
@@ -24,6 +24,7 @@ using .Selectors
 include("lazy.jl")
 include("binary.jl")
 include("materialize.jl")
+include("json.jl")
 
 keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
@@ -67,10 +68,7 @@ end # module
        # create Dict/NamedTuple/Array and call tojson
        # use struct and call tojson
        # support jsonlines output
- # JSONBase.materialize that works on LazyValue, or BSONValue
-   # JSONBase.fields overload to give names, excludes, defaults, etc.
  # package docs
- # tojson
  # topretty
  # checkout JSON5, Amazon Ion?
  # special-case Matrix when reading/writing?

@@ -87,67 +87,6 @@ function _checkendpos(x::LazyValue, pos, ::Type{T}) where {T}
     return nothing
 end
 
-"""
-    JSONBase.fields(T)
-
-Overload used by JSONBase during materialization and writing
-to override default field names, values, properties.
-
-An example definition for a custom type `MyType` would be:
-
-```julia
-JSONBase.fields(::Type{<:MyType}) = (
-    field1 = (jsonkey="field_1", default=10)
-)
-```
-"""
-function fields end
-
-fields(_) = (;)
-
-"""
-    JSONBase.mutable(T)
-
-Overloadable method that indicates whether a type `T` supports the
-"mutable" strategy for construction via `JSONBase.materialize`.
-
-Specifically, the "mutable" strategy requires that a type support:
-  * `T()`: construction with a no-arg constructor
-  * `setproperty!(x, name, value)`: when JSON object keys are found that match a property name, the value is set via `setproperty!`
-
-To add support for the "mutable" strategy for a custom type `MyType` the definition would be:
-
-```julia
-JSONBase.mutable(::Type{<:MyType}) = true
-```
-
-Note this definition works whether `MyType` has type parameters or not due to being defined
-for *any* `MyType`.
-"""
-mutable(_) = false
-
-"""
-    JSONBase.kwdef(T)
-
-Overloadable method that indicates whether a type `T` supports the
-"keyword arg" strategy for construction via `JSONBase.materialize`.
-
-Specifically, the "keyword arg" strategy requires that a type support:
-  * `T(; keyvals...)`: construction by passing a collection of key-value pairs
-    as keyword arguments to the type constructor; this kind of constructor is
-    defined automatically when `@kwdef` is used to define a type
-
-To add support for the "keyword arg" strategy for a custom type `MyType` the definition would be:
-
-```julia
-JSONBase.kwdef(::Type{<:MyType}) = true
-```
-
-Note this definition works whether `MyType` has type parameters or not due to being defined
-for *any* `MyType`.
-"""
-kwdef(_) = false
-
 function materialize(x::BinaryValue, ::Type{T}=Any; types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}
     local y
     materialize(_x -> (y = _x), x, T, types)
@@ -185,7 +124,7 @@ _valtype(_) = Any
 
 @inline function (f::GenericObjectClosure{O, T})(key, val) where {O, T}
     pos = _materialize(GenericObjectValFunc{O, typeof(key), T}(f.keyvals, key), val, _valtype(f.keyvals), T)
-    return API.Continue(pos)
+    return Continue(pos)
 end
 
 struct GenericArrayClosure{A, T}
@@ -201,14 +140,15 @@ end
 
 @inline function (f::GenericArrayClosure{A, T})(i, val) where {A, T}
     pos = _materialize(GenericArrayValFunc{A, T}(f.arr), val, eltype(A), T)
-    return API.Continue(pos)
+    return Continue(pos)
 end
 
 initarray(::Type{A}) where {A <: AbstractSet} = A()
 initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
 
-@noinline _materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, types::Type{Types{O, A, S}}=TYPES) where {F, T, O, A, S} =
-    materialize(valfunc, x, T, types)
+function _materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, types::Type{Types{O, A, S}}=TYPES) where {F, T, O, A, S}
+    return materialize(valfunc, x, T, types)
+end
 
 # Note: when calling this method manually, we don't do the checkendpos check
 # which means if the input JSON has invalid trailing characters, no error will be thrown
@@ -257,15 +197,13 @@ initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
             return pos
         end
     elseif type == JSONTypes.STRING
+        str, pos = parsestring(x)
         if T === Any
-            str, pos = parsestring(x)
             valfunc(tostring(S, str))
-            return pos
         else
-            str, pos = parsestring(x)
             valfunc(tostring(T, str))
-            return pos
         end
+        return pos
     elseif x isa LazyValue && type == JSONTypes.NUMBER # only LazyValue
         return parsenumber(valfunc, x)
     elseif x isa BinaryValue && type == JSONTypes.INT # only BinaryValue
@@ -311,22 +249,23 @@ end
 @generated function applyfield(::Type{T}, types::Type{S}, key, val, valfunc::F) where {T, S <: Types, F}
     N = fieldcount(T)
     ex = quote
-        return API.Continue()
+        return Continue()
     end
-    fds = fields(T)
     for i = 1:N
         fname = fieldname(T, i)
-        field = get(fds, fname, nothing)
         ftype = fieldtype(T, i)
-        str = field !== nothing && haskey(field, :jsonkey) ? field.jsonkey : String(fname)
+        str = String(fname)
         pushfirst!(ex.args, quote
-            if Selectors.eq(key, $str)
+            field = get(fds, $(Meta.quot(fname)), nothing)
+            str = field !== nothing && haskey(field, :jsonkey) ? field.jsonkey : $str
+            if Selectors.eq(key, str)
                 c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
                 pos = _materialize(c, val, $ftype, types)
-                return API.Continue(pos)
+                return Continue(pos)
             end
         end)
     end
+    pushfirst!(ex.args, :(fds = fields($T)))
     pushfirst!(ex.args, :(Base.@_inline_meta))
     # str = sprint(show, ex)
     # println(str)

@@ -41,6 +41,10 @@ json = """
 x = JSONBase.binary(json)
 @btime JSONBase.materialize($x)
 
+x = JSON.parse(json)
+@btime JSON.json(x)
+x = JSON3.read(json)
+@btime JSON3.write(x)
 
 # julia> @btime JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
 #   183.152 ns (3 allocations: 144 bytes)
@@ -81,3 +85,17 @@ x = JSONBase.binary(json)
 # julia> @btime JSONBase.binary("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
 #   185.816 ns (6 allocations: 256 bytes)
 # JSONBase.BinaryValue(UInt8[0xa7, 0x10, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x8d  …  0x8b, 0x02, 0x8d, 0x63, 0x8b, 0x03, 0x8d, 0x64, 0x8b, 0x04], 1, JSONTypes.OBJECT)
+
+
+julia> @btime JSONBase.json(nothing)
+  23.654 ns (2 allocations: 88 bytes)
+"null"
+
+julia> @btime JSON3.write(nothing)
+  53.753 ns (2 allocations: 88 bytes)
+"null"
+
+julia> @btime JSON.json(nothing)
+  83.592 ns (4 allocations: 192 bytes)
+"null"
+

@@ -149,6 +149,23 @@ end
 
 JSONBase.kwdef(::Type{System}) = true
 
+struct L
+    id::Int
+    first_name::String
+    rate::Float64
+end
+
+JSONBase.fields(::Type{L}) = (
+    first_name = (jsonkey="firstName",),
+    rate = (default=33.3,)
+)
+
+struct ThreeDates
+    date::Date
+    datetime::DateTime
+    time::Time
+end
+
 @testset "JSONBase.materialize" begin
     obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
@@ -236,4 +253,23 @@ JSONBase.kwdef(::Type{System}) = true
             @test dss[2].c == "hi"
         end
     end
+    # test L
+    @test JSONBase.materialize("""{"id": 1, "firstName": "george", "first_name": "harry"}""", L) == L(1, "george", 33.3)
+    # test Char
+    @test JSONBase.materialize("\"a\"", Char) == 'a'
+    @test JSONBase.materialize("\"\u2200\"", Char) == '∀'
+    @test_throws ArgumentError JSONBase.materialize("\"ab\"", Char)
+    # test UUID
+    @test JSONBase.materialize("\"ffffffff-ffff-ffff-ffff-ffffffffffff\"", UUID) == UUID(typemax(UInt128))
+    # test Symbol
+    @test JSONBase.materialize("\"a\"", Symbol) == :a
+    # test VersionNumber
+    @test JSONBase.materialize("\"1.2.3\"", VersionNumber) == v"1.2.3"
+    # test Regex
+    @test JSONBase.materialize("\"1.2.3\"", Regex) == r"1.2.3"
+    # test Dates
+    @test JSONBase.materialize("\"2023-02-23T22:39:02\"", DateTime) == DateTime(2023, 2, 23, 22, 39, 2)
+    @test JSONBase.materialize("\"2023-02-23\"", Date) == Date(2023, 2, 23)
+    @test JSONBase.materialize("\"22:39:02\"", Time) == Time(22, 39, 2)
+    # @test JSONBase.materialize("{\"date\":\"2023_02_23\",\"datetime\":\"2023/02/23 12:34:56\",\"time\":\"12/34/56\"}", ThreeDates)
 end

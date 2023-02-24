@@ -110,8 +110,8 @@ Base.getindex(x::BinaryValue) = materialize(x)
 
 function API.JSONType(x::BinaryValue)
     T = gettype(x)
-    return T == JSONTypes.OBJECT ? API.ObjectLike() :
-        T == JSONTypes.ARRAY ? API.ArrayLike() : nothing
+    return T == JSONTypes.OBJECT ? ObjectLike() :
+        T == JSONTypes.ARRAY ? ArrayLike() : nothing
 end
 
 function gettype(tape::Vector{UInt8}, pos::Int)
@@ -156,7 +156,7 @@ end
     # update our nfields
     nfields = readnumber(f.tape, f.tape_nfields, Int32)
     _writenumber(nfields + Int32(1), f.tape, f.tape_nfields)
-    return API.Continue(pos)
+    return Continue(pos)
 end
 
 struct BinaryArrayClosure
@@ -173,7 +173,7 @@ end
     # update our nelems
     nelems = readnumber(f.tape, f.tape_nelems, Int32)
     _writenumber(nelems + Int32(1), f.tape, f.tape_nelems)
-    return API.Continue(pos)
+    return Continue(pos)
 end
 
 struct BinaryNumberClosure{T}
@@ -487,10 +487,10 @@ end
         key, pos = parsestring(BinaryValue(tape, pos, JSONTypes.STRING))
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(key, b)
-        ret isa API.Continue || return ret
+        ret isa Continue || return ret
         pos = ret.pos == 0 ? skip(b) : ret.pos
     end
-    return API.Continue(pos)
+    return Continue(pos)
 end
 
 @noinline _parsearray(keyvalfunc::F, x::BinaryValue) where {F} =
@@ -509,10 +509,10 @@ end
     for i = 1:nfields
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(i, b)
-        ret isa API.Continue || return ret
+        ret isa Continue || return ret
         pos = ret.pos == 0 ? skip(b) : ret.pos
     end
-    return API.Continue(pos)
+    return Continue(pos)
 end
 
 # return a PtrString for an embedded string in binary format

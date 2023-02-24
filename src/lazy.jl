@@ -65,8 +65,8 @@ end
 # TODO: change this to binary
 Base.getindex(x::LazyValue) = materialize(x)
 
-API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? API.ObjectLike() :
-    gettype(x) == JSONTypes.ARRAY ? API.ArrayLike() : nothing
+API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? ObjectLike() :
+    gettype(x) == JSONTypes.ARRAY ? ArrayLike() : nothing
 
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
@@ -115,8 +115,8 @@ end
 # `keyvalfunc` is provided a PtrString => LazyValue pair
 # to materialize the key, call `tostring(key)`
 # this is done automatically in selection syntax via `keyvaltostring` transformer
-# returns an API.Continue(pos) value that notes the next position where parsing should
-# continue (selection syntax requires API.Continue to be returned from foreach)
+# returns an Continue(pos) value that notes the next position where parsing should
+# continue (selection syntax requires Continue to be returned from foreach)
 @inline function parseobject(keyvalfunc::F, x::LazyValue) where {F}
     pos = getpos(x)
     buf = getbuf(x)
@@ -130,7 +130,7 @@ end
     pos += 1
     @nextbyte
     if b == UInt8('}')
-        return API.Continue(pos + 1)
+        return Continue(pos + 1)
     end
     while true
         # parsestring returns key as a PtrString
@@ -145,16 +145,16 @@ end
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(key, val)
-        # if ret is not an API.Continue, then we're 
+        # if ret is not an Continue, then we're 
         # short-circuiting parsing via selection syntax
         # so return immediately
-        ret isa API.Continue || return ret
+        ret isa Continue || return ret
         # if keyvalfunc didn't materialize `val` and return an
         # updated `pos`, then we need to skip val ourselves
         pos = ret.pos == 0 ? skip(val) : ret.pos
         @nextbyte
         if b == UInt8('}')
-            return API.Continue(pos + 1)
+            return Continue(pos + 1)
         elseif b != UInt8(',')
             error = ExpectedComma
             @goto invalid
@@ -174,12 +174,12 @@ end
 macro jsonlines_checks()
     esc(quote
         # if we're at EOF, then we're done
-        pos > len && return API.Continue(pos)
+        pos > len && return Continue(pos)
         # now we want to ignore whitespace, but *not* newlines
         b = getbyte(buf, pos)
         while b == UInt8(' ') || b == UInt8('\t')
             pos += 1
-            pos > len && return API.Continue(pos)
+            pos > len && return Continue(pos)
             b = getbyte(buf, pos)
         end
         # any combo of '\r', '\n', or '\r\n' is a valid delimiter
@@ -187,12 +187,12 @@ macro jsonlines_checks()
         if b == UInt8('\r')
             foundr = true
             pos += 1
-            pos > len && return API.Continue(pos)
+            pos > len && return Continue(pos)
             b = getbyte(buf, pos)
         end
         if b == UInt8('\n')
             pos += 1
-            pos > len && return API.Continue(pos)
+            pos > len && return Continue(pos)
             b = getbyte(buf, pos)
         elseif !foundr
             # if we didn't find a newline and we're not EOF
@@ -203,7 +203,7 @@ macro jsonlines_checks()
         end
         while b == UInt8(' ') || b == UInt8('\t')
             pos += 1
-            pos > len && return API.Continue(pos)
+            pos > len && return Continue(pos)
             b = getbyte(buf, pos)
         end
     end)
@@ -215,10 +215,10 @@ end
 # core JSON array parsing function
 # takes a `keyvalfunc` that is applied to each index => value element
 # `keyvalfunc` is provided a Int => LazyValue pair
-# API.foreach always requires a key-value pair function
+# foreach always requires a key-value pair function
 # so we use the index as the key
-# returns an API.Continue(pos) value that notes the next position where parsing should
-# continue (selection syntax requires API.Continue to be returned from foreach)
+# returns an Continue(pos) value that notes the next position where parsing should
+# continue (selection syntax requires Continue to be returned from foreach)
 @inline function parsearray(keyvalfunc::F, x::LazyValue) where {F}
     pos = getpos(x)
     buf = getbuf(x)
@@ -234,7 +234,7 @@ end
         pos += 1
         @nextbyte
         if b == UInt8(']')
-            return API.Continue(pos + 1)
+            return Continue(pos + 1)
         end
     else
         opts = withopts(opts, jsonlines=false)
@@ -244,14 +244,14 @@ end
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(i, val)
-        ret isa API.Continue || return ret
+        ret isa Continue || return ret
         pos = ret.pos == 0 ? skip(val) : ret.pos
         if jsonlines
             @jsonlines_checks
         else
             @nextbyte
             if b == UInt8(']')
-                return API.Continue(pos + 1)
+                return Continue(pos + 1)
             elseif b != UInt8(',')
                 error = ExpectedComma
                 @goto invalid

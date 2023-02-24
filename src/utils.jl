@@ -146,6 +146,8 @@ end
     end
 end
 
+Base.String(x::PtrString) = tostring(String, x)
+
 # generic fallback
 tostring(::Type{T}, x::PtrString) where {T} = T(tostring(String, x))
 tostring(U::Union, x::PtrString) = convert(U, tostring(String, x))
@@ -159,6 +161,15 @@ function tostring(::Type{T}, x::PtrString) where {T <: Enum}
         v === sym && return T(k)
     end
     throw(ArgumentError("invalid `$T` string value: \"$sym\""))
+end
+
+function tostring(::Type{Char}, x::PtrString)
+    str = tostring(String, x)
+    if length(str) == 1
+        return str[1]
+    else
+        throw(ArgumentError("invalid `Char` from string value: \"$str\""))
+    end
 end
 
 function streq(x::PtrString, y::AbstractString)
