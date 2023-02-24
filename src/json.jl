@@ -19,6 +19,7 @@ lower(::Missing) = nothing
 lower(x::Symbol) = String(x)
 lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)
 lower(x::Regex) = x.pattern
+lower(x::Matrix) = eachcol(x)
 
 sizeguess(::Union{Nothing, Missing}) = 4
 sizeguess(x::Bool) = 5

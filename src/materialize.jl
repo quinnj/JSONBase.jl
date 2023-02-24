@@ -143,6 +143,34 @@ end
     return Continue(pos)
 end
 
+struct ArrayLengthClosure
+    len::Ptr{Int}
+end
+
+@inline function (f::ArrayLengthClosure)(i, val)
+    unsafe_store!(f.len, i)
+    return Continue()
+end
+
+struct MatrixClosure{A, T}
+    mat::A
+    col::Int
+end
+
+struct MatrixValFunc{A}
+    mat::A
+    col::Int
+    row::Int
+end
+
+@inline (f::MatrixValFunc{A})(x) where {A} = setindex!(f.mat, x, f.row, f.col)
+
+@inline function (f::MatrixClosure{A, T})(i, val) where {A, T}
+    # i is our row index
+    pos = _materialize(MatrixValFunc(f.mat, f.col, i), val, eltype(A), T)
+    return Continue(pos)
+end
+
 initarray(::Type{A}) where {A <: AbstractSet} = A()
 initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
 
@@ -190,6 +218,32 @@ end
             pos = parsearray(GenericArrayClosure{A, types}(a), x).pos
             valfunc(a)
             return pos
+        elseif T <: Matrix
+            # special-case Matrix
+            # must be an array of arrays, where each array element
+            # is the same length
+            # we need to peek ahead to figure out the size
+            sz = parsearray(x) do i, v
+                # v is the 1st column of our matrix
+                # but we really just want to know the length
+                gettype(v) == JSONTypes.ARRAY || throw(ArgumentError("expected array of arrays for materializing: `$T`"))
+                ref = Ref(0)
+                c = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
+                GC.@preserve ref parsearray(c, v)
+                # by returning the len here, we're short-circuiting the initial
+                # parsearray call
+                return unsafe_load(c.len)
+            end
+            a = T(undef, (sz, sz))
+            # now we do the actual parsing to fill in our matrix
+            cont = parsearray(x) do i, v
+                # i is the column index of our matrix
+                # v is the 1st column of our matrix
+                c = MatrixClosure{T, types}(a, i)
+                return parsearray(c, v)
+            end
+            valfunc(a)
+            return cont.pos
         else
             a = initarray(T)
             pos = parsearray(GenericArrayClosure{T, types}(a), x).pos

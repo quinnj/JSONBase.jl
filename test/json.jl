@@ -111,5 +111,6 @@ JSONBase.lower(::Type{ThreeDates}, nm, val) =
     x = ThreeDates(Date(2023, 2, 23), DateTime(2023, 2, 23, 12, 34, 56), Time(12, 34, 56))
     @test JSONBase.json(x) == "{\"date\":\"2023_02_23\",\"datetime\":\"2023/02/23 12:34:56\",\"time\":\"12/34/56\"}"
     # test matrix writing
-
+    @test JSONBase.json([1 2; 3 4]) == "[[1,3],[2,4]]"
+    @test JSONBase.json((a=[1 2; 3 4],)) == "{\"a\":[[1,3],[2,4]]}"
 end
