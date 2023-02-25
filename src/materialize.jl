@@ -102,6 +102,7 @@ struct GenericObjectValFunc{O, K, T}
     key::K
 end
 
+#TODO: we need to upcast here + add tests
 @inline (f::GenericObjectValFunc{O, K, T})(x) where {O, K, T} =
     addkeyval!(f.keyvals, tostring(_keytype(f.keyvals, T), f.key), x)
 
@@ -135,6 +136,7 @@ struct GenericArrayValFunc{A, T}
     arr::A
 end
 
+#TODO: we need to upcast here + add tests
 @inline (f::GenericArrayValFunc{A, T})(x) where {A, T} =
     push!(f.arr, x)
 
@@ -180,6 +182,7 @@ end
 
 # Note: when calling this method manually, we don't do the checkendpos check
 # which means if the input JSON has invalid trailing characters, no error will be thrown
+# we also don't do the upcast of whatever is materialized to T (we're assuming that is done in valfunc)
 @inline function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, types::Type{Types{O, A, S}}=TYPES) where {F, T, O, A, S}
     type = gettype(x)
     if type == JSONTypes.OBJECT
@@ -219,6 +222,7 @@ end
             valfunc(a)
             return pos
         elseif T <: Matrix
+            #TODO: factor this out into a separate method
             # special-case Matrix
             # must be an array of arrays, where each array element is the same length
             # we need to peek ahead to figure out the size
@@ -380,6 +384,7 @@ end
 @inline (f::ApplyMutable{T})(i, k, v) where {T} = setproperty!(f.x, k, upcast(T, k, v))
 @inline (f::MutableClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyMutable(f.x))
 
+#TODO: do we need any extra checks/validations/guards here?
 function materialize!(x::Union{LazyValue, BinaryValue}, ::Type{T}, types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}
     y = T()
     materialize!(x, y, types)

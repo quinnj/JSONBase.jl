@@ -146,7 +146,7 @@ end
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(key, val)
         # if ret is not an Continue, then we're 
-        # short-circuiting parsing via selection syntax
+        # short-circuiting parsing via e.g. selection syntax
         # so return immediately
         ret isa Continue || return ret
         # if keyvalfunc didn't materialize `val` and return an
@@ -272,7 +272,7 @@ end
 # that notes whether escape characters were encountered while parsing
 # or not. It allows materialize, _binary, etc. to deal
 # with the string data appropriately without forcing a String allocation
-# should NEVER be visible to users though!
+# PtrString should NEVER be visible to users though!
 @inline function parsestring(x::LazyValue)
     buf, pos = getbuf(x), getpos(x)
     len, b = getlength(buf), getbyte(buf, pos)

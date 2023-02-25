@@ -44,6 +44,14 @@ Selectors.@selectors BinaryValue
 end # module
 
 #TODO
+ # lower(T, k, v) and upcast(T, k, v) consistency (always symbols? always strings?)
+ # ObjectLike, ArrayLike, JSONType, dictlike unification
+   # also clarify expected interfaces:
+     # for writing: strings, numbers, objects, arrays, etc
+     # for reading: strings, numbers, objects, arrays, etc
+ # LazyObject/LazyArray/BinaryObject/BinaryArray to make them more convenient + display?
+   # implement AbstractDict for LazyObject/BinaryObject
+   # implement AbstractArray for LazyArray/BinaryArray
  # 3-5 common JSON processing tasks/workflows
    # eventually in docs
    # use to highlight selection syntax
@@ -70,8 +78,5 @@ end # module
        # support jsonlines output
  # package docs
  # topretty
+ # allow materialize on any ObjectLike? i.e. Dicts? (would need parseobject on Dict)
  # checkout JSON5, Amazon Ion?
- # special-case Matrix when reading/writing?
- # think about JSONBase.walk
-   # pass in keyvalfunc that gets wrapped/passed to API.foreach
-   # then we recursively walk LazyValues

@@ -266,6 +266,7 @@ end
         y, pos = parsestring(x)
         return pos, _binary(y, tape, i, x)
     elseif gettype(x) == JSONTypes.NUMBER
+        #TODO: explain the ref + unsafe_convert trick we're using here
         rx = Ref(0)
         c = BinaryNumberClosure(tape, i, Base.unsafe_convert(Ptr{Int}, rx), x)
         pos = GC.@preserve rx parsenumber(c, x)
@@ -315,7 +316,7 @@ end
     end
 end
 
-# encode numbers in bson tape
+# encode numbers in tape
 function writenumber(y::T, tape, i, x::LazyValue) where {T <: Number}
     n = sizeof(y)
     # we call min(15, n) here because
@@ -465,7 +466,7 @@ end
     return unsafe_load(ptr)
 end
 
-@noinline _parseobject(keyvalfunc::F, x::BinaryValue) where {F} =
+_parseobject(keyvalfunc::F, x::BinaryValue) where {F} =
     parseobject(keyvalfunc, x)
 
 # core object processing function for binary format
@@ -493,7 +494,7 @@ end
     return Continue(pos)
 end
 
-@noinline _parsearray(keyvalfunc::F, x::BinaryValue) where {F} =
+_parsearray(keyvalfunc::F, x::BinaryValue) where {F} =
     parsearray(keyvalfunc, x)
 
 @inline function parsearray(keyvalfunc::F, x::BinaryValue) where {F}
@@ -531,10 +532,11 @@ end
         len = readnumber(tape, pos, Int32)
         pos += 4
     end
+    # hardcode `false` for `escaped` since we unescaped when writing to the tape
     return PtrString(pointer(tape, pos), len, false), pos + len
 end
 
-@noinline _parseint(valfunc::F, x::BinaryValue) where {F} =
+_parseint(valfunc::F, x::BinaryValue) where {F} =
     parseint(valfunc, x)
 
 # reading an integer from binary format involves
@@ -570,7 +572,7 @@ end
     return pos + sz
 end
 
-@noinline _parsefloat(valfunc::F, x::BinaryValue) where {F} =
+_parsefloat(valfunc::F, x::BinaryValue) where {F} =
     parsefloat(valfunc, x)
 
 @inline function parsefloat(valfunc::F, x::BinaryValue) where {F}

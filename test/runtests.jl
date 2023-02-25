@@ -252,6 +252,6 @@ end
     end
 end
 
-include("numbers.jl")
 include("struct.jl")
 include("json.jl")
+include("numbers.jl")

@@ -93,7 +93,7 @@ end
         buf[pos] = UInt8(':')
         pos += 1
     end
-    if val isa T && val in f.objids
+    if val in f.objids
         pos = _null(buf, pos)
     else
         pos = json!(buf, pos, lower(T, key, val), f.allow_inf, f.objids)

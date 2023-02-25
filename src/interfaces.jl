@@ -150,7 +150,7 @@ end
 
 abstract type JSONType end
 
-JSONType(x::T) where {T} = JSONType(T)
+JSONType(::T) where {T} = JSONType(T)
 
 struct ObjectLike <: JSONType end
 struct ArrayLike <: JSONType end
