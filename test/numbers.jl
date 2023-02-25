@@ -34,7 +34,7 @@ end
 
 @testset "Zeros: `$f`" for f in (JSONBase.lazy, JSONBase.binary)
     # zeros
-    @test JSONBase.materialize(f("0")) === 0
+    @test JSONBase.materialize(f("0")) === Int64(0)
     @test JSONBase.materialize(f("0e0")) === 0.0
     @test JSONBase.materialize(f("-0e0")) === -0.0
     @test JSONBase.materialize(f("0e-0")) === 0.0

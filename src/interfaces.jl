@@ -156,7 +156,7 @@ struct ObjectLike <: JSONType end
 struct ArrayLike <: JSONType end
 const ObjectOrArrayLike = Union{ObjectLike, ArrayLike}
 
-JSONType(::Type{<:Union{AbstractArray, AbstractSet, Tuple}}) = ArrayLike()
+JSONType(::Type{<:Union{AbstractArray, AbstractSet, Tuple, Base.Generator}}) = ArrayLike()
 
 @inline function foreach(f, x::AbstractArray)
     for i in eachindex(x)
@@ -172,7 +172,7 @@ end
 
 # appropriate definition for iterables that
 # can't have #undef values
-@inline function foreach(f, x::AbstractSet)
+@inline function foreach(f, x::Union{AbstractSet, Base.Generator})
     for (i, v) in enumerate(x)
         ret = f(i, v)
         ret isa Continue || return ret
