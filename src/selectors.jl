@@ -13,7 +13,7 @@ Supported syntax includes:
 """
 module Selectors
 
-import ..API: foreach, Continue, JSONType, ObjectLike, ArrayLike, ObjectOrArrayLike
+import ..API: foreach, Continue, objectlike, arraylike
 import ..PtrString
 import ..streq
 
@@ -38,7 +38,7 @@ Base.isassigned(x::List, args::Integer...) = isassigned(items(x), args...)
 Base.push!(x::List, item) = push!(items(x), item)
 Base.append!(x::List, items_to_append) = append!(items(x), items_to_append)
 
-JSONType(::List) = ArrayLike()
+arraylike(::Type{List}) = true
 
 function foreach(f, x::List)
     # note that there should *never* be #undef
@@ -65,32 +65,34 @@ eq(x::PtrString, y::PtrString) = streq(x, y)
 eq(x::PtrString, y::AbstractString) = streq(x, y)
 eq(x::AbstractString, y::PtrString) = streq(y, x)
 
-function _getindex(::ObjectOrArrayLike, x, key::Union{KeyInd, Integer})
-    ret = foreach(x) do k, v
-        return eq(k, key) ? v : Continue()
-    end
-    ret isa Continue && throw(KeyError(key))
-    return ret
-end
-
-function _getindex(::ArrayLike, x, key::KeyInd)
-    values = List()
-    foreach(x) do _, item
-        ST = JSONType(item)
-        if ST === ObjectLike()
-            ret = _getindex(ST, item, key)
-            if ret isa List
-                append!(values, ret)
-            elseif !(ret isa Continue)
-                push!(values, ret)
+function _getindex(x, key::Union{KeyInd, Integer})
+    if arraylike(x) && key isa KeyInd
+        values = List()
+        foreach(x) do _, item
+            if objectlike(item)
+                ret = _getindex(item, key)
+                if ret isa List
+                    append!(values, ret)
+                elseif !(ret isa Continue)
+                    push!(values, ret)
+                end
             end
+            return Continue()
         end
-        return Continue()
+        return values
+    elseif objectlike(x) || arraylike(x)
+        ret = foreach(x) do k, v
+            return eq(k, key) ? v : Continue()
+        end
+        ret isa Continue && throw(KeyError(key))
+        return ret
+    else
+        noselection(x)
     end
-    return values
 end
 
-function _getindex(::ObjectOrArrayLike, x, ::Colon)
+function _getindex(x, ::Colon)
+    selectioncheck(x)
     values = List()
     foreach(x) do _, v
         push!(values, v)
@@ -99,9 +101,10 @@ function _getindex(::ObjectOrArrayLike, x, ::Colon)
     return values
 end
 
-_getindex(::ArrayLike, x::List, ::Colon) = x
+_getindex(x::List, ::Colon) = x
 
-function _getindex(::ObjectOrArrayLike, x, inds::Inds)
+function _getindex(x, inds::Inds)
+    selectioncheck(x)
     values = List()
     foreach(x) do k, v
         i = findfirst(eq(k), inds)
@@ -111,9 +114,13 @@ function _getindex(::ObjectOrArrayLike, x, inds::Inds)
     return values
 end
 
-_getindex(ST::ObjectOrArrayLike, x, f::Base.Callable) = _getindex(ST, x, f(x))
+function _getindex(x, f::Base.Callable)
+    selectioncheck(x)
+    return _getindex(x, f(x))
+end
 
-function _getindex(::ObjectOrArrayLike, x, ::Colon, f::Base.Callable)
+function _getindex(x, ::Colon, f::Base.Callable)
+    selectioncheck(x)
     values = List()
     foreach(x) do k, v
         f(k, v) && push!(values, v)
@@ -122,58 +129,57 @@ function _getindex(::ObjectOrArrayLike, x, ::Colon, f::Base.Callable)
     return values
 end
 
-function _getindex(::ObjectLike, x, ::typeof(~), key::Union{KeyInd, Colon})
+function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
     values = List()
-    foreach(x) do k, v
-        ST = JSONType(v)
-        if key === Colon()
-            push!(values, v)
-        elseif eq(k, key)
-            if ST === ArrayLike()
-                foreach(v) do _, vv
-                    push!(values, vv)
-                    return Continue()
-                end
-            else
+    if objectlike(x)
+        foreach(x) do k, v
+            if key === Colon()
                 push!(values, v)
+            elseif eq(k, key)
+                if arraylike(v)
+                    foreach(v) do _, vv
+                        push!(values, vv)
+                        return Continue()
+                    end
+                else
+                    push!(values, v)
+                end
             end
+            if objectlike(v)
+                ret = _getindex(v, ~, key)
+                append!(values, ret)
+            elseif arraylike(v)
+                ret = _getindex(v, ~, key)
+                append!(values, ret)
+            end
+            return Continue()
         end
-        if ST === ObjectLike()
-            ret = _getindex(ObjectLike(), v, ~, key)
-            append!(values, ret)
-        elseif ST === ArrayLike()
-            ret = _getindex(ArrayLike(), v, ~, key)
-            append!(values, ret)
+    elseif arraylike(x)
+        foreach(x) do _, item
+            if objectlike(item)
+                ret = _getindex(item, ~, key)
+                append!(values, ret)
+            elseif arraylike(item)
+                ret = _getindex(item, ~, key)
+                append!(values, ret)
+            end
+            return Continue()
         end
-        return Continue()
+    else
+        noselection(x)
     end
     return values
 end
 
-function _getindex(::ArrayLike, x, ::typeof(~), key::Union{KeyInd, Colon})
-    values = List()
-    foreach(x) do _, item
-        ST = JSONType(item)
-        if ST === ObjectLike()
-            ret = _getindex(ObjectLike(), item, ~, key)
-            append!(values, ret)
-        elseif ST === ArrayLike()
-            ret = _getindex(ArrayLike(), item, ~, key)
-            append!(values, ret)
-        end
-        return Continue()
-    end
-    return values
-end
-
-_getindex(::Nothing, args...) = throw(ArgumentError("Selection syntax not defined for: `$(args[1])`"))
+selectioncheck(x) = objectlike(x) || arraylike(x) || noselection(x)
+@noinline noselection(x) = throw(ArgumentError("Selection syntax not defined for: `$x`"))
 
 macro selectors(T)
     esc(quote
-        Base.getindex(x::$T, arg) = Selectors._getindex(Selectors.JSONType(x), x, arg)
-        Base.getindex(x::$T, ::Colon, arg) = Selectors._getindex(Selectors.JSONType(x), x, :, arg)
-        Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(Selectors.JSONType(x), x, ~, arg)
-        Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(Selectors.JSONType(x), x, key)
+        Base.getindex(x::$T, arg) = Selectors._getindex(x, arg)
+        Base.getindex(x::$T, ::Colon, arg) = Selectors._getindex(x, :, arg)
+        Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(x, ~, arg)
+        Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(x, key)
     end)
 end
 

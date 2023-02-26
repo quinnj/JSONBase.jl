@@ -2,7 +2,7 @@ module API
 
 using Dates, UUIDs
 
-export foreach, Continue, fields, mutable, kwdef, lower, upcast, JSONType, ObjectLike, ArrayLike
+export foreach, Continue, fields, mutable, kwdef, lower, upcast, objectlike, arraylike
 
 """
     JSONBase.foreach(f, x)
@@ -148,15 +148,10 @@ function upcast(::Type{Char}, x::String)
     end
 end
 
-abstract type JSONType end
+objectlike(_) = false
+arraylike(_) = false
 
-JSONType(::T) where {T} = JSONType(T)
-
-struct ObjectLike <: JSONType end
-struct ArrayLike <: JSONType end
-const ObjectOrArrayLike = Union{ObjectLike, ArrayLike}
-
-JSONType(::Type{<:Union{AbstractArray, AbstractSet, Tuple, Base.Generator}}) = ArrayLike()
+arraylike(::Union{AbstractArray, AbstractSet, Tuple, Base.Generator}) = true
 
 @inline function foreach(f, x::AbstractArray)
     for i in eachindex(x)
@@ -180,8 +175,8 @@ end
     return Continue()
 end
 
-JSONType(::Type{T}) where {T} = isstructtype(T) ? ObjectLike() : nothing
-JSONType(::Type{String}) = nothing
+objectlike(x::T) where {T} = isstructtype(T)
+objectlike(::String) = false
 
 _string(x) = String(x)
 _string(x::Integer) = string(x)
@@ -212,7 +207,7 @@ _string(x::Integer) = string(x)
     return ex
 end
 
-JSONType(::Type{<:AbstractDict}) = ObjectLike()
+objectlike(::AbstractDict) = true
 
 function foreach(f, x::AbstractDict)
     for (k, v) in x

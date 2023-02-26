@@ -108,11 +108,8 @@ end
 
 Base.getindex(x::BinaryValue) = materialize(x)
 
-function API.JSONType(x::BinaryValue)
-    T = gettype(x)
-    return T == JSONTypes.OBJECT ? ObjectLike() :
-        T == JSONTypes.ARRAY ? ArrayLike() : nothing
-end
+API.objectlike(x::BinaryValue) = gettype(x) == JSONTypes.OBJECT
+API.arraylike(x::BinaryValue) = gettype(x) == JSONTypes.ARRAY
 
 function gettype(tape::Vector{UInt8}, pos::Int)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -527,9 +524,9 @@ end
     pos += 1
     sm = bm.size
     if sm.is_size_embedded
-        len = sm.embedded_size
+        len = Int(sm.embedded_size)
     else
-        len = readnumber(tape, pos, Int32)
+        len = Int(readnumber(tape, pos, Int32))
         pos += 4
     end
     # hardcode `false` for `escaped` since we unescaped when writing to the tape

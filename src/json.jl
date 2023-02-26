@@ -72,22 +72,17 @@ macro checkn(n)
     end)
 end
 
-openchar(::ObjectLike) = UInt8('{')
-closechar(::ObjectLike) = UInt8('}')
-openchar(::ArrayLike) = UInt8('[')
-closechar(::ArrayLike) = UInt8(']')
-
-struct WriteClosure{JT, T} # T is the type of the parent object/array being written
+struct WriteClosure{arraylike, T} # T is the type of the parent object/array being written
     buf::Vector{UInt8}
     pos::Ptr{Int}
     allow_inf::Bool
     objids::Base.IdSet{Any} # to track circular references
 end
 
-@inline function (f::WriteClosure{JT, T})(key, val) where {JT, T}
+@inline function (f::WriteClosure{arraylike, T})(key, val) where {arraylike, T}
     pos = unsafe_load(f.pos)
     buf = f.buf
-    if JT == ObjectLike
+    if !arraylike
         pos = _string(buf, pos, key)
         @checkn 1
         buf[pos] = UInt8(':')
@@ -107,7 +102,6 @@ end
 
 # assume x is lowered value
 function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing)
-    JT = JSONType(x)
     # string
     if x isa AbstractString
         return _string(buf, pos, x)
@@ -136,16 +130,17 @@ function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{A
     elseif x === nothing
         return _null(buf, pos)
     # object or array
-    elseif JT == ObjectLike() || JT == ArrayLike()
+    elseif objectlike(x) || arraylike(x)
+        al = arraylike(x)
         @checkn 1
-        @inbounds buf[pos] = openchar(JT)
+        @inbounds buf[pos] = al ? UInt8('[') : UInt8('{')
         pos += 1
         pre_pos = pos
         ref = Ref(pos)
         # use an IdSet to keep track of circular references
         objids = objids === nothing ? Base.IdSet{Any}() : objids
         push!(objids, x)
-        c = WriteClosure{typeof(JT), typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), allow_inf, objids)
+        c = WriteClosure{al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), allow_inf, objids)
         GC.@preserve ref API.foreach(c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
@@ -157,7 +152,7 @@ function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{A
             # but if the object/array was empty, we need to do the check manually
             @checkn 1
         end
-        @inbounds buf[pos] = closechar(JT)
+        @inbounds buf[pos] = al ? UInt8(']') : UInt8('}')
         return pos + 1
     else
         throw(ArgumentError("can't determine how to output JSON: `$x`"))

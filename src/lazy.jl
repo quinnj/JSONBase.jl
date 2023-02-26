@@ -65,8 +65,8 @@ end
 # TODO: change this to binary
 Base.getindex(x::LazyValue) = materialize(x)
 
-API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? ObjectLike() :
-    gettype(x) == JSONTypes.ARRAY ? ArrayLike() : nothing
+API.objectlike(x::LazyValue) = gettype(x) == JSONTypes.OBJECT
+API.arraylike(x::LazyValue) = gettype(x) == JSONTypes.ARRAY
 
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
@@ -107,7 +107,7 @@ API.JSONType(x::LazyValue) = gettype(x) == JSONTypes.OBJECT ? ObjectLike() :
     invalid(error, buf, pos, Any)
 end
 
-@noinline _parseobject(keyvalfunc::F, x::LazyValue) where {F} =
+_parseobject(keyvalfunc::F, x::LazyValue) where {F} =
     parseobject(keyvalfunc, x)
 
 # core JSON object parsing function
@@ -209,7 +209,7 @@ macro jsonlines_checks()
     end)
 end
 
-@noinline _parsearray(keyvalfunc::F, x::LazyValue) where {F} =
+_parsearray(keyvalfunc::F, x::LazyValue) where {F} =
     parsearray(keyvalfunc, x)
 
 # core JSON array parsing function
@@ -300,7 +300,7 @@ end
     invalid(error, buf, pos, "string")
 end
 
-@noinline _parsenumber(valfunc::F, x::LazyValue) where {F} =
+_parsenumber(valfunc::F, x::LazyValue) where {F} =
     parsenumber(valfunc, x)
 
 # core JSON number parsing function
@@ -349,7 +349,11 @@ end
         return pos
     elseif T == JSONTypes.NUMBER
         return _parsenumber(pass, x)
-    else
-        return _materialize(pass, x)
+    elseif T == JSONTypes.TRUE
+        return getpos(x) + 4
+    elseif T == JSONTypes.FALSE
+        return getpos(x) + 5
+    elseif T == JSONTypes.NULL
+        return getpos(x) + 4
     end
 end

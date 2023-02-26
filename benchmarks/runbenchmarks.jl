@@ -36,10 +36,11 @@ json = """
 
 @btime JSON.parse(json) #   2.181 μs (63 allocations: 4.09 KiB)
 @btime JSON3.read(json) #   1.521 μs (7 allocations: 5.44 KiB)
-@btime JSONBase.materialize(json) #   2.736 μs (72 allocations: 4.26 KiB)
-@btime JSONBase.binary(json) #   1.479 μs (21 allocations: 1.50 KiB)
+@btime JSONBase.materialize(json) #  2.616 μs (64 allocations: 4.10 KiB)
+@btime JSONBase.binary(json) #  1.429 μs (2 allocations: 608 bytes)
 x = JSONBase.binary(json)
 @btime JSONBase.materialize($x)
+# 2.704 μs (142 allocations: 5.93 KiB)
 
 x = JSON.parse(json)
 @btime JSON.json(x)

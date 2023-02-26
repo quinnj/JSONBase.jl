@@ -108,7 +108,8 @@ end
 
 # `dictlike` controls whether a type eagerly "slurps up"
 # all key-value pairs from a JSON object, otherwise
-# the type will recurse into materialize(json, T)
+# the type use one of the construction strategies (mutable, kwdef, struct)
+# which matches object keys with field names
 dictlike(::Type{<:AbstractDict}) = true
 dictlike(::Type{<:AbstractVector{<:Pair}}) = true
 dictlike(_) = false
@@ -123,7 +124,7 @@ _valtype(d::AbstractDict) = valtype(d)
 _valtype(d::AbstractVector{<:Pair}) = eltype(d).parameters[2]
 _valtype(_) = Any
 
-@inline function (f::GenericObjectClosure{O, T})(key, val) where {O, T}
+@inline function (f::GenericObjectClosure{O, T})(key::K, val::V) where {O, T, K, V}
     pos = _materialize(GenericObjectValFunc{O, typeof(key), T}(f.keyvals, key), val, _valtype(f.keyvals), T)
     return Continue(pos)
 end
