@@ -2,7 +2,7 @@ module API
 
 using Dates, UUIDs
 
-export foreach, Continue, fields, mutable, kwdef, lower, upcast, arraylike
+export foreach, Continue, fields, mutable, kwdef, lower, lift, arraylike
 
 """
     JSONBase.foreach(f, x)
@@ -113,34 +113,35 @@ lower(x::Regex) = x.pattern
 lower(x::Matrix) = eachcol(x)
 
 """
-    JSONBase.upcast(T, x)
+    JSONBase.lift(T, x)
+    JSONBase.lift(::Type{T}, key, val)
 
-Allow a JSON-natural object `x` to be converted into a more general type `T`.
-This is used to allow for more general types to be used in the
-JSONBase materialization process.
+Allow a JSON-natural object `x` to be converted into the custom type `T`.
+This is used to allow for custom types to be constructed directly in the
+materialization process.
 """
-function upcast end
+function lift end
 
-upcast(::Type{T}, x) where {T} = Base.issingletontype(T) ? T() : convert(T, x)
+lift(::Type{T}, x) where {T} = Base.issingletontype(T) ? T() : convert(T, x)
 
-upcast(::Type{T}, key::Symbol, val) where {T} = upcast(fieldtype(T, key), val)
-@generated function upcast(::Type{T}, key::AbstractString, val) where {T}
+lift(::Type{T}, key::Symbol, val) where {T} = lift(fieldtype(T, key), val)
+@generated function lift(::Type{T}, key::AbstractString, val) where {T}
     ex = quote
         # @show T, key, val
     end
     for i = 1:fieldcount(T)
         nm = String(fieldname(T, i))
-        push!(ex.args, :(key == $nm && return upcast($(fieldtype(T, i)), val)))
+        push!(ex.args, :(key == $nm && return lift($(fieldtype(T, i)), val)))
     end
     push!(ex.args, :(return val))
     return ex
 end
 
-# some default upcasts for common types
-upcast(::Type{T}, ::Nothing) where {T >: Missing} = T === Any ? nothing : missing
-upcast(::Type{T}, x::String) where {T <: Union{VersionNumber, UUID, Dates.TimeType, Regex}} = T(x)
+# some default lift definitions for common types
+lift(::Type{T}, ::Nothing) where {T >: Missing} = T === Any ? nothing : missing
+lift(::Type{T}, x::String) where {T <: Union{VersionNumber, UUID, Dates.TimeType, Regex}} = T(x)
 
-function upcast(::Type{Char}, x::String)
+function lift(::Type{Char}, x::String)
     if length(x) == 1
         return x[1]
     else

@@ -44,7 +44,7 @@ Selectors.@selectors BinaryValue
 end # module
 
 #TODO
- # lower(T, k, v) and upcast(T, k, v) consistency (always symbols? always strings?)
+ # lower(T, k, v) and lift(T, k, v) consistency (always symbols? always strings?)
  # ObjectLike, ArrayLike, JSONType, dictlike unification
    # also clarify expected interfaces:
      # for writing: strings, numbers, objects, arrays, etc

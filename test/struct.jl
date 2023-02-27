@@ -166,7 +166,7 @@ struct ThreeDates
     time::Time
 end
 
-function JSONBase.upcast(::Type{ThreeDates}, key::Symbol, val)
+function JSONBase.lift(::Type{ThreeDates}, key::Symbol, val)
     if key == :date
         return Date(val, dateformat"yyyy_mm_dd")
     elseif key == :datetime

@@ -139,7 +139,7 @@ end
     JSONBase.tostring(T, x::JSONBase.PtrString)
 
 Convert a `PtrString` to a string of type `T`.
-Happens earlier in the materialization process than `upcast`.
+Happens earlier in the materialization process than `lift`.
 A utility that string types can overload if they have a more efficient
 conversion method that can avoid the `String` intermediate + allocation.
 """

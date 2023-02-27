@@ -56,7 +56,7 @@ mutable struct ConvertClosure{T}
     ConvertClosure{T}() where {T} = new{T}()
 end
 
-@inline (f::ConvertClosure{T})(x) where {T} = setfield!(f, :x, upcast(T, x))
+@inline (f::ConvertClosure{T})(x) where {T} = setfield!(f, :x, lift(T, x))
 
 @inline function materialize(x::LazyValue, ::Type{T}=Any; types::Type{Types{O, A, S}}=TYPES) where {T, O, A, S}
     y = ConvertClosure{T}()
@@ -102,7 +102,7 @@ struct GenericObjectValFunc{O, K, T}
     key::K
 end
 
-#TODO: we need to upcast here + add tests
+#TODO: we need to lift here + add tests
 @inline (f::GenericObjectValFunc{O, K, T})(x) where {O, K, T} =
     addkeyval!(f.keyvals, tostring(_keytype(f.keyvals, T), f.key), x)
 
@@ -137,7 +137,7 @@ struct GenericArrayValFunc{A, T}
     arr::A
 end
 
-#TODO: we need to upcast here + add tests
+#TODO: we need to lift here + add tests
 @inline (f::GenericArrayValFunc{A, T})(x) where {A, T} =
     push!(f.arr, x)
 
@@ -183,7 +183,7 @@ end
 
 # Note: when calling this method manually, we don't do the checkendpos check
 # which means if the input JSON has invalid trailing characters, no error will be thrown
-# we also don't do the upcast of whatever is materialized to T (we're assuming that is done in valfunc)
+# we also don't do the lift of whatever is materialized to T (we're assuming that is done in valfunc)
 @inline function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, types::Type{Types{O, A, S}}=TYPES) where {F, T, O, A, S}
     type = gettype(x)
     if type == JSONTypes.OBJECT
@@ -360,7 +360,7 @@ struct ApplyStruct{T}
     vec::Vector{Any}
 end
 
-@inline (f::ApplyStruct{T})(i, k, v) where {T} = setindex!(f.vec, upcast(T, k, v), i)
+@inline (f::ApplyStruct{T})(i, k, v) where {T} = setindex!(f.vec, lift(T, k, v), i)
 @inline (f::StructClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyStruct{T}(f.vec))
 
 struct KwClosure{T, types}
@@ -371,7 +371,7 @@ struct ApplyKw{T}
     kws::Vector{Pair{Symbol, Any}}
 end
 
-@inline (f::ApplyKw{T})(i, k, v) where {T} = push!(f.kws, k => upcast(T, k, v))
+@inline (f::ApplyKw{T})(i, k, v) where {T} = push!(f.kws, k => lift(T, k, v))
 @inline (f::KwClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyKw{T}(f.kws))
 
 struct MutableClosure{T, types}
@@ -382,7 +382,7 @@ struct ApplyMutable{T}
     x::T
 end
 
-@inline (f::ApplyMutable{T})(i, k, v) where {T} = setproperty!(f.x, k, upcast(T, k, v))
+@inline (f::ApplyMutable{T})(i, k, v) where {T} = setproperty!(f.x, k, lift(T, k, v))
 @inline (f::MutableClosure{T, types})(key, val) where {T, types} = applyfield(T, types, key, val, ApplyMutable(f.x))
 
 #TODO: do we need any extra checks/validations/guards here?
