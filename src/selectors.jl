@@ -13,11 +13,16 @@ Supported syntax includes:
 """
 module Selectors
 
-import ..API: foreach, Continue, objectlike, arraylike
+import ..API: foreach, Continue, arraylike
 import ..PtrString
 import ..streq
 
 export List
+
+# this is defined here instead of interfaces.jl because it's not
+# really meant to be overloaded, except for selection syntax
+# i.e. we don't use this anywhere else in the package
+objectlike(x) = false
 
 """
     List(...)
@@ -38,7 +43,7 @@ Base.isassigned(x::List, args::Integer...) = isassigned(items(x), args...)
 Base.push!(x::List, item) = push!(items(x), item)
 Base.append!(x::List, items_to_append) = append!(items(x), items_to_append)
 
-arraylike(::Type{List}) = true
+arraylike(::List) = true
 
 function foreach(f, x::List)
     # note that there should *never* be #undef
@@ -67,6 +72,9 @@ eq(x::AbstractString, y::PtrString) = streq(y, x)
 
 function _getindex(x, key::Union{KeyInd, Integer})
     if arraylike(x) && key isa KeyInd
+        # indexing an array with a key, so we check
+        # each element if it's an object and if the
+        # object has the key
         values = List()
         foreach(x) do _, item
             if objectlike(item)
@@ -81,6 +89,7 @@ function _getindex(x, key::Union{KeyInd, Integer})
         end
         return values
     elseif objectlike(x) || arraylike(x)
+        # indexing object w/ key or array w/ index
         ret = foreach(x) do k, v
             return eq(k, key) ? v : Continue()
         end
@@ -91,6 +100,7 @@ function _getindex(x, key::Union{KeyInd, Integer})
     end
 end
 
+# return all values of an object or elements of an array as a List
 function _getindex(x, ::Colon)
     selectioncheck(x)
     values = List()
@@ -101,8 +111,10 @@ function _getindex(x, ::Colon)
     return values
 end
 
+# a list is already a list of all its elements
 _getindex(x::List, ::Colon) = x
 
+# indexing object or array w/ a list of keys/indexes
 function _getindex(x, inds::Inds)
     selectioncheck(x)
     values = List()
@@ -119,6 +131,8 @@ function _getindex(x, f::Base.Callable)
     return _getindex(x, f(x))
 end
 
+# return all values of an object or elements of an array as a List
+# that satisfy a key-value function
 function _getindex(x, ::Colon, f::Base.Callable)
     selectioncheck(x)
     values = List()
@@ -129,6 +143,8 @@ function _getindex(x, ::Colon, f::Base.Callable)
     return values
 end
 
+# recursively return all values of an object or elements of an array as a List (:)
+# as a single flattened List; or all properties that match key
 function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
     values = List()
     if objectlike(x)
@@ -172,7 +188,7 @@ function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
 end
 
 selectioncheck(x) = objectlike(x) || arraylike(x) || noselection(x)
-@noinline noselection(x) = throw(ArgumentError("Selection syntax not defined for: `$x`"))
+@noinline noselection(x) = throw(ArgumentError("Selection syntax not defined for: `$(typeof(x))))`"))
 
 macro selectors(T)
     esc(quote

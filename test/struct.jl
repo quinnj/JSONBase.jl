@@ -187,6 +187,8 @@ end
     obj = JSONBase.materialize("""{ "d": 1,"b": 2,"c": 3,"a": 4}""", NamedTuple{(:a, :b, :c, :d), Tuple{Int, Int, Int, Int}})
     @test obj == (a = 4, b = 2, c = 3, d = 1)
     @test JSONBase.materialize("{}", C) === C()
+    # we also support materializing singleton from JSONBase.json output
+    @test JSONBase.materialize("\"C()\"", C) === C()
     obj = JSONBase.materialize!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
     @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
     obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)

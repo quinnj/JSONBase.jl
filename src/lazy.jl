@@ -65,7 +65,7 @@ end
 # TODO: change this to binary
 Base.getindex(x::LazyValue) = materialize(x)
 
-API.objectlike(x::LazyValue) = gettype(x) == JSONTypes.OBJECT
+Selectors.objectlike(x::LazyValue) = gettype(x) == JSONTypes.OBJECT
 API.arraylike(x::LazyValue) = gettype(x) == JSONTypes.ARRAY
 
 # core method that detects what JSON value is at the current position

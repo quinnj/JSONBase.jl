@@ -108,7 +108,7 @@ end
 
 Base.getindex(x::BinaryValue) = materialize(x)
 
-API.objectlike(x::BinaryValue) = gettype(x) == JSONTypes.OBJECT
+Selectors.objectlike(x::BinaryValue) = gettype(x) == JSONTypes.OBJECT
 API.arraylike(x::BinaryValue) = gettype(x) == JSONTypes.ARRAY
 
 function gettype(tape::Vector{UInt8}, pos::Int)

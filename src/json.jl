@@ -88,6 +88,7 @@ end
         buf[pos] = UInt8(':')
         pos += 1
     end
+    #TODO: should we be checking the lowered value here?
     if val in f.objids
         pos = _null(buf, pos)
     else
@@ -129,8 +130,21 @@ function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{A
     # null
     elseif x === nothing
         return _null(buf, pos)
+    # special-case no-field objects (singletons, primitive types)
+    # if we didn't, they'd just be written as empty objects
+    elseif !arraylike(x) && nfields(x) == 0
+        return _string(buf, pos, x)
     # object or array
-    elseif objectlike(x) || arraylike(x)
+    else
+        # it's notable that we're in an `else` block here; and that
+        # we don't actually call `objectlike` at all, but just assume
+        # anything else is an object/array
+        # this allows us to have a `json` that "doesn't throw", which can
+        # be a good property for production systems
+        # but, it also means objects might be written in ways that weren't
+        # intended; in those cases, it should be determined whether an
+        # appropriate `lower` method should be defined (preferred) or perhaps
+        # a custom `API.foreach` override to provide key-value pairs (more rare)
         al = arraylike(x)
         @checkn 1
         @inbounds buf[pos] = al ? UInt8('[') : UInt8('{')
@@ -154,8 +168,6 @@ function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{A
         end
         @inbounds buf[pos] = al ? UInt8(']') : UInt8('}')
         return pos + 1
-    else
-        throw(ArgumentError("can't determine how to output JSON: `$x`"))
     end
 end
 

@@ -113,4 +113,6 @@ JSONBase.lower(::Type{ThreeDates}, nm, val) =
     # test matrix writing
     @test JSONBase.json([1 2; 3 4]) == "[[1,3],[2,4]]"
     @test JSONBase.json((a=[1 2; 3 4],)) == "{\"a\":[[1,3],[2,4]]}"
+    # singleton writing
+    @test JSONBase.json(C()) == "\"C()\""
 end

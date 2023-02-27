@@ -2,7 +2,7 @@ module API
 
 using Dates, UUIDs
 
-export foreach, Continue, fields, mutable, kwdef, lower, upcast, objectlike, arraylike
+export foreach, Continue, fields, mutable, kwdef, lower, upcast, arraylike
 
 """
     JSONBase.foreach(f, x)
@@ -121,12 +121,12 @@ JSONBase materialization process.
 """
 function upcast end
 
-upcast(::Type{T}, x) where {T} = convert(T, x)
+upcast(::Type{T}, x) where {T} = Base.issingletontype(T) ? T() : convert(T, x)
 
 upcast(::Type{T}, key::Symbol, val) where {T} = upcast(fieldtype(T, key), val)
 @generated function upcast(::Type{T}, key::AbstractString, val) where {T}
     ex = quote
-        @show T, key, val
+        # @show T, key, val
     end
     for i = 1:fieldcount(T)
         nm = String(fieldname(T, i))
@@ -148,9 +148,7 @@ function upcast(::Type{Char}, x::String)
     end
 end
 
-objectlike(_) = false
 arraylike(_) = false
-
 arraylike(::Union{AbstractArray, AbstractSet, Tuple, Base.Generator}) = true
 
 @inline function foreach(f, x::AbstractArray)
@@ -174,9 +172,6 @@ end
     end
     return Continue()
 end
-
-objectlike(x::T) where {T} = isstructtype(T)
-objectlike(::String) = false
 
 _string(x) = String(x)
 _string(x::Integer) = string(x)
@@ -206,8 +201,6 @@ _string(x::Integer) = string(x)
     push!(ex.args, :(return Continue()))
     return ex
 end
-
-objectlike(::AbstractDict) = true
 
 function foreach(f, x::AbstractDict)
     for (k, v) in x
