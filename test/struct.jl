@@ -286,7 +286,16 @@ end
     @test JSONBase.materialize("\"22:39:02\"", Time) == Time(22, 39, 2)
     @test JSONBase.materialize("{\"date\":\"2023_02_23\",\"datetime\":\"2023/02/23 12:34:56\",\"time\":\"12/34/56\"}", ThreeDates) ==
         ThreeDates(Date(2023, 2, 23), DateTime(2023, 2, 23, 12, 34, 56), Time(12, 34, 56))
+    # test Array w/ lifted value
+    @test isequal(JSONBase.materialize("[null,null]", Vector{Missing}), [missing, missing])
     # test Matrix
     @test JSONBase.materialize("[[1,3],[2,4]]", Matrix{Int}) == [1 2; 3 4]
     @test JSONBase.materialize("{\"a\": [[1,3],[2,4]]}", NamedTuple{(:a,),Tuple{Matrix{Int}}}) == (a=[1 2; 3 4],)
+    # test Matrix w/ lifted value
+    @test isequal(JSONBase.materialize("[[null,null],[null,null]]", Matrix{Missing}), [missing missing; missing missing])
+    # test lift on Dict values
+    obj = JSONBase.materialize("""{\"ffffffff-ffff-ffff-ffff-ffffffffffff\": null,\"ffffffff-ffff-ffff-ffff-fffffffffffe\": null}""", Dict{UUID,Missing})
+    @test obj[UUID(typemax(UInt128))] === missing
+    @test obj[UUID(typemax(UInt128) - 0x01)] === missing
+
 end

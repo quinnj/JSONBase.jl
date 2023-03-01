@@ -95,7 +95,7 @@ kwdef(_) = false
 
 Allow an object `x` to be "lowered" into a JSON-compatible representation.
 The 2nd method allows overloading lower for an object of type `T` for a specific
-key-value representing the field name (as a String) and the field value being serialized.
+key-value representing the field name (as a Symbol) and the field value being serialized.
 This allows customizing the serialization of a specific field of a type without
 needing to clash with other global `lower` methods.
 """

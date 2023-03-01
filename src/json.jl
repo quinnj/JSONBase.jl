@@ -79,6 +79,23 @@ struct WriteClosure{arraylike, T} # T is the type of the parent object/array bei
     objids::Base.IdSet{Any} # to track circular references
 end
 
+# API.foreach calls f(::String, val), but we want to call
+# lower(T, ::Symbol, val), so translate here
+@generated function fieldsym(::Type{T}, key) where {T}
+    ex = quote
+        # @show T, key, val
+    end
+    if key == String
+        for i = 1:fieldcount(T)
+            fnm = fieldname(T, i)
+            nm = String(fnm)
+            push!(ex.args, :(key == $nm && return $(Meta.quot(fnm))))
+        end
+    end
+    push!(ex.args, :(return key))
+    return ex
+end
+
 @inline function (f::WriteClosure{arraylike, T})(key, val) where {arraylike, T}
     pos = unsafe_load(f.pos)
     buf = f.buf
@@ -87,12 +104,14 @@ end
         @checkn 1
         buf[pos] = UInt8(':')
         pos += 1
+        lowered = lower(T, fieldsym(T, key), val)
+    else
+        lowered = lower(val)
     end
-    #TODO: should we be checking the lowered value here?
-    if val in f.objids
+    if lowered in f.objids
         pos = _null(buf, pos)
     else
-        pos = json!(buf, pos, lower(T, key, val), f.allow_inf, f.objids)
+        pos = json!(buf, pos, lowered, f.allow_inf, f.objids)
     end
     @checkn 1
     buf[pos] = UInt8(',')

@@ -102,9 +102,11 @@ struct GenericObjectValFunc{O, K, T}
     key::K
 end
 
-#TODO: we need to lift here + add tests
-@inline (f::GenericObjectValFunc{O, K, T})(x) where {O, K, T} =
-    addkeyval!(f.keyvals, tostring(_keytype(f.keyvals, T), f.key), x)
+@inline function (f::GenericObjectValFunc{O, K, T})(x) where {O, K, T}
+    KT = _keytype(f.keyvals, T)
+    VT = _valtype(f.keyvals)
+    return addkeyval!(f.keyvals, lift(KT, tostring(KT, f.key)), lift(VT, x))
+end
 
 # `dictlike` controls whether a type eagerly "slurps up"
 # all key-value pairs from a JSON object, otherwise
@@ -137,9 +139,8 @@ struct GenericArrayValFunc{A, T}
     arr::A
 end
 
-#TODO: we need to lift here + add tests
 @inline (f::GenericArrayValFunc{A, T})(x) where {A, T} =
-    push!(f.arr, x)
+    push!(f.arr, lift(eltype(A), x))
 
 @inline function (f::GenericArrayClosure{A, T})(i, val) where {A, T}
     pos = _materialize(GenericArrayValFunc{A, T}(f.arr), val, eltype(A), T)
@@ -166,7 +167,7 @@ struct MatrixValFunc{A}
     row::Int
 end
 
-@inline (f::MatrixValFunc{A})(x) where {A} = setindex!(f.mat, x, f.row, f.col)
+@inline (f::MatrixValFunc{A})(x) where {A} = setindex!(f.mat, lift(eltype(A), x), f.row, f.col)
 
 @inline function (f::MatrixClosure{A, T})(i, val) where {A, T}
     # i is our row index
@@ -187,34 +188,37 @@ end
 @inline function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, types::Type{Types{O, A, S}}=TYPES) where {F, T, O, A, S}
     type = gettype(x)
     if type == JSONTypes.OBJECT
-        if T === Any || dictlike(T)
+        if T === Any
             d = O()
             pos = parseobject(GenericObjectClosure{O, types}(d), x).pos
             valfunc(d)
             return pos
-        else
-            if mutable(T)
+        elseif dictlike(T)
+            d = T()
+            pos = parseobject(GenericObjectClosure{T, types}(d), x).pos
+            valfunc(d)
+            return pos
+        elseif mutable(T)
                 y = T()
                 pos = materialize!(x, y, types)
                 valfunc(y)
                 return pos
-            elseif kwdef(T)
-                kws = Pair{Symbol, Any}[]
-                c = KwClosure{T, types}(kws)
-                pos = parseobject(c, x).pos
-                y = T(; kws...)
-                valfunc(y)
-                return pos
-            else
-                # struct fallback
-                N = fieldcount(T)
-                vec = Vector{Any}(undef, N)
-                sc = StructClosure{T, types}(vec)
-                pos = parseobject(sc, x).pos
-                constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
-                construct(T, constructor, vec, valfunc)
-                return pos
-            end
+        elseif kwdef(T)
+            kws = Pair{Symbol, Any}[]
+            c = KwClosure{T, types}(kws)
+            pos = parseobject(c, x).pos
+            y = T(; kws...)
+            valfunc(y)
+            return pos
+        else
+            # struct fallback
+            N = fieldcount(T)
+            vec = Vector{Any}(undef, N)
+            sc = StructClosure{T, types}(vec)
+            pos = parseobject(sc, x).pos
+            constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
+            construct(T, constructor, vec, valfunc)
+            return pos
         end
     elseif type == JSONTypes.ARRAY
         if T === Any

@@ -5,9 +5,9 @@ mutable struct CircularRef
     self::Union{Nothing, CircularRef}
 end
 
-JSONBase.lower(::Type{ThreeDates}, nm, val) =
-    nm == "date" ? Dates.format(val, "yyyy_mm_dd") :
-    nm == "datetime" ? Dates.format(val, "yyyy/mm/dd HH:MM:SS") :
+JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
+    nm == :date ? Dates.format(val, "yyyy_mm_dd") :
+    nm == :datetime ? Dates.format(val, "yyyy/mm/dd HH:MM:SS") :
     Dates.format(val, "HH/MM/SS")
 
 @testset "JSON output" begin
