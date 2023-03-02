@@ -211,4 +211,14 @@ function foreach(f, x::AbstractDict)
     return Continue()
 end
 
+# convenience function that calls API.foreach on x
+# but applies the function to just the 1st item
+struct ApplyOnce{F}
+    f::F
+end
+
+@inline (f::ApplyOnce)(k, v) = f.f(v)
+
+applyonce(f, x) = foreach(ApplyOnce(f), x)
+
 end # module API

@@ -1,4 +1,4 @@
-sizeguess(::Union{Nothing, Missing}) = 4
+sizeguess(::Nothing) = 4
 sizeguess(x::Bool) = 5
 sizeguess(x::Integer) = 20
 sizeguess(x::AbstractFloat) = 20
@@ -25,12 +25,12 @@ If `allow_inf` is `false`, throw an error if `Inf`, `-Inf`, or `NaN` is encounte
 `allow_inf` is `false` by default.
 
 By default, `x` must be a JSON-serializable object. Supported types include:
-  * `AbstractString`
-  * `Bool`
-  * `Nothing`/`Missing`
-  * `Number`
-  * `AbstractArray`/`Tuple`/`AbstractSet`
-  * `AbstractDict`/`NamedTuple`/structs
+  * `AbstractString` => JSON string
+  * `Bool` => JSON boolean
+  * `Nothing` => JSON null
+  * `Number` => JSON number
+  * `AbstractArray`/`Tuple`/`AbstractSet` => JSON array
+  * `AbstractDict`/`NamedTuple`/structs => JSON object
 
 If an object is not JSON-serializable, an override for [`JSONBase.lower`](@ref) can
 be defined to convert it to a JSON-serializable object. Some default `lower` defintions
@@ -45,14 +45,16 @@ These allow common Base/stdlib types to be serialized in an expected format.
 function json end
 
 function json(io::IO, x::T; allow_inf::Bool=false) where {T}
-    buf = Vector{UInt8}(undef, sizeguess(x))
-    pos = json!(buf, 1, lower(x), allow_inf, nothing)
+    y = lower(x)
+    buf = Vector{UInt8}(undef, sizeguess(y))
+    pos = json!(buf, 1, y, allow_inf, nothing)
     return write(io, resize!(buf, pos - 1))
 end
 
 function json(x::T; allow_inf::Bool=false) where {T}
-    buf = Base.StringVector(sizeguess(x))
-    pos = json!(buf, 1, lower(x), allow_inf, nothing)
+    y = lower(x)
+    buf = Base.StringVector(sizeguess(y))
+    pos = json!(buf, 1, y, allow_inf, nothing)
     return String(resize!(buf, pos - 1))
 end
 
@@ -63,11 +65,15 @@ function json(fname::String, obj::T; kw...) where {T}
     return fname
 end
 
+# we use the same growth strategy as Base julia does for array growing
+# which starts with small N at ~5x and approaches 1.125x as N grows
+# ref: https://github.com/JuliaLang/julia/pull/40453
+newlen(n₀) = ceil(Int, n₀ + 4*n₀^(7 / 8) + n₀ / 8)
+
 macro checkn(n)
     esc(quote
         if (pos + $n - 1) > length(buf)
-            #TODO: this resize strategy is probably bad for really big/nested objects/arrays
-            resize!(buf, ceil(Int, (pos + $n) * 1.25))
+            resize!(buf, newlen(pos + $n))
         end
     end)
 end
