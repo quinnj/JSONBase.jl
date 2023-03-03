@@ -1,3 +1,5 @@
+#TODO: add examples to docs
+#TODO: mention how Matrix work when materializing
 """
     JSONBase.materialize(json)
     JSONBase.materialize(json, T)
@@ -40,6 +42,7 @@ Similar to [`materialize`](@ref), but materializes into an existing object `x`,
 which supports the "mutable" strategy for construction; that is,
 JSON object keys are matched to field names and `setpropty!(x, field, value)` is called.
 """
+function materialize! end
 
 materialize(io::Union{IO, Base.AbstractCmd}, ::Type{T}=Any; kw...) where {T} = materialize(Base.read(io), T; kw...)
 materialize!(io::Union{IO, Base.AbstractCmd}, x; kw...) = materialize!(Base.read(io), x; kw...)
@@ -107,24 +110,6 @@ end
     VT = _valtype(f.keyvals)
     return addkeyval!(f.keyvals, lift(KT, tostring(KT, f.key)), lift(VT, x))
 end
-
-# `dictlike` controls whether a type eagerly "slurps up"
-# all key-value pairs from a JSON object, otherwise
-# the type use one of the construction strategies (mutable, kwdef, struct)
-# which matches object keys with field names
-dictlike(::Type{<:AbstractDict}) = true
-dictlike(::Type{<:AbstractVector{<:Pair}}) = true
-dictlike(_) = false
-
-@inline addkeyval!(d::AbstractDict, k, v) = d[k] = v
-@inline addkeyval!(d::AbstractVector, k, v) = push!(d, k => v)
-
-_keytype(d::AbstractDict, ::Type{Types{O, A, S}}) where {O, A, S} = keytype(d)
-_keytype(d::AbstractVector{<:Pair}, ::Type{Types{O, A, S}}) where {O, A, S} = eltype(d).parameters[1]
-_keytype(d, ::Type{Types{O, A, S}}) where {O, A, S} = S
-_valtype(d::AbstractDict) = valtype(d)
-_valtype(d::AbstractVector{<:Pair}) = eltype(d).parameters[2]
-_valtype(_) = Any
 
 @inline function (f::GenericObjectClosure{O, T})(key::K, val::V) where {O, T, K, V}
     pos = _materialize(GenericObjectValFunc{O, typeof(key), T}(f.keyvals, key), val, _valtype(f.keyvals), T)
@@ -294,15 +279,17 @@ end
 
 # NOTE: care needs to be taken in applyfield to not inline too much,
 # since we're essentially duplicating the inner quote block for each
-# field of struct T
-# applyfield is used by each struct materialization strategy (Mutable, KwDef, Struct)
+# field of struct T, which may have a lot of fields
+# applyfield is used by each struct materialization strategy (mutable, kwdef, struct)
 # it takes a `key` and `val` parsed from json, then compares `key`
 # with field names in `T` and when a match is found, determines how
-# to materialize `val` (via materialize)
+# to materialize `val` (via recursively calling materialize)
 # passing `valfunc` along to be applied to the final materialized value
 @generated function applyfield(::Type{T}, types::Type{S}, key, val, valfunc::F) where {T, S <: Types, F}
     N = fieldcount(T)
     ex = quote
+        # if no fields matched this json key, then we return Continue()
+        # here to signal that the value should be skipped
         return Continue()
     end
     for i = 1:N

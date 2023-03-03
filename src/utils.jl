@@ -7,6 +7,8 @@ invalid JSON at byte position $pos while parsing type $T: $error
 $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 """))
 
+# helper struct we pack lazy-specific keyword args into
+# held by LazyValue for access
 Base.@kwdef struct Options
     float64::Bool = false
     jsonlines::Bool = false
@@ -20,6 +22,8 @@ withopts(opts; kw...) = Options(;
 
 const OPTIONS = Options()
 
+# helper struct for overloading default object,
+# array, and string types to use during materialization
 struct Types{O, A, S} end
 
 Types(;
@@ -84,6 +88,8 @@ function getbyte(buf::AbstractString, pos)
     return b
 end
 
+# helper macro to get the next byte and if checkwh=true
+# to keep going until we get a non-whitespace byte
 macro nextbyte(checkwh=true)
     esc(quote
         if pos > len
@@ -156,8 +162,22 @@ function tostring end
     end
 end
 
-# generic fallback
+# generic fallbacks
 tostring(::Type{T}, x::PtrString) where {T} = tostring(String, x)
+
+"""
+    JSONBase.tostring(x)
+
+Overloadable function that allows non-`Integer` `Number` types
+to convert themselves to a `String` that is then written directly (unquoted)
+when serializing `x` to JSON.
+
+An example overload would look something like:
+```julia
+JSONBase.tostring(x::MyDecimal) = string(x)
+```
+"""
+tostring(x) = string(x)
 
 _symbol(ptr, len) = ccall(:jl_symbol_n, Ref{Symbol}, (Ptr{UInt8}, Int), ptr, len)
 

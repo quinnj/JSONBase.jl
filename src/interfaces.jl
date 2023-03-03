@@ -2,7 +2,11 @@ module API
 
 using Dates, UUIDs
 
-export foreach, Continue, fields, mutable, kwdef, lower, lift, arraylike
+export foreach, Continue, fields, mutable, kwdef,
+       dictlike, addkeyval!, _keytype, _valtype,
+       lower, lift, arraylike
+
+import ..Types
 
 """
     JSONBase.foreach(f, x)
@@ -13,6 +17,19 @@ For each key-value or index-value pair in `x`, call `f(k, v)`.
 If `f` doesn't return an `JSONBase.Continue` instance, `foreach` should
 return the non-`Continue` value immediately and stop iterating.
 `foreach` should return `JSONBase.Continue` once iterating is complete.
+
+An example overload of `foreach` for a generic iterable would be:
+
+```julia
+function JSONBase.foreach(f, x::MyIterable)
+    for (i, v) in enumerate(x)
+        ret = f(i, v)
+        # if `f` doesn't return Continue, return immediately
+        ret isa JSONBase.Continue || return ret
+    end
+    return JSONBase.Continue()
+end
+```
 """
 function foreach end
 
@@ -33,6 +50,15 @@ Continue() = Continue(0)
 
 Overload used by JSONBase during materialization and writing
 to override default field names, values, properties.
+
+Supported properties per field include:
+  * `jsonkey::String`: a key name different from `fieldname(T, nm)` that will
+     be used when outputing `T` to JSON; also used in materialization, if `jsonkey`
+     value is found as a JSON object key, it will be set for the indicated field
+  * `default`: a default value to be used for a field in the "struct" materialization
+    strategy when the field isn't present in the JSON source; note that for `mutable`
+    and `kwdef` structs, it is already convenient to set default values, so
+    this `default` value is ignored for those materialization strategies
 
 An example definition for a custom type `MyType` would be:
 
@@ -64,6 +90,9 @@ JSONBase.mutable(::Type{<:MyType}) = true
 
 Note this definition works whether `MyType` has type parameters or not due to being defined
 for *any* `MyType`.
+
+For fieldnames of `T` that don't have a different JSON object key, [`JSONBase.fields`](@ref)
+can be used to map between fieldname and JSON key.
 """
 mutable(_) = false
 
@@ -86,8 +115,49 @@ JSONBase.kwdef(::Type{<:MyType}) = true
 
 Note this definition works whether `MyType` has type parameters or not due to being defined
 for *any* `MyType`.
+
+For fieldnames of `T` that don't have a different JSON object key, [`JSONBase.fields`](@ref)
+can be used to map between fieldname and JSON key.
 """
 kwdef(_) = false
+
+"""
+    JSONBase.dictlike(T)
+
+Overloadable method that indicates whether a type `T` supports the
+"dictlike" strategy for construction via `JSONBase.materialize`, which
+doesn't do any field matching like the `mutable`, `kwdef`, or `struct`
+strategies, but instead just slurps up all key-value pairs into `T`
+like a `Dict` or `Vector{Pair}`.
+
+Specifically, the "dictlike" strategy requires that a type support:
+  * `T()`: any empty constructor
+  * `T <: AbstractDict`: `T` must subtype and implement the `AbstractDict` interface;
+    JSON object key-value pairs will be added to the object via `setindex!`
+
+To add support for the "dictlike" strategy for a custom type `MyType` the definition would be:
+    
+```julia
+JSONBase.dictlike(::Type{<:MyType}) = true
+```
+
+Note this definition works whether `MyType` has type parameters or not due to being defined.
+"""
+function dictlike end
+
+dictlike(::Type{<:AbstractDict}) = true
+dictlike(::Type{<:AbstractVector{<:Pair}}) = true
+dictlike(_) = false
+
+addkeyval!(d::AbstractDict, k, v) = d[k] = v
+addkeyval!(d::AbstractVector, k, v) = push!(d, k => v)
+
+_keytype(d::AbstractDict, ::Type{Types{O, A, S}}) where {O, A, S} = keytype(d)
+_keytype(d::AbstractVector{<:Pair}, ::Type{Types{O, A, S}}) where {O, A, S} = eltype(d).parameters[1]
+_keytype(d, ::Type{Types{O, A, S}}) where {O, A, S} = S
+_valtype(d::AbstractDict) = valtype(d)
+_valtype(d::AbstractVector{<:Pair}) = eltype(d).parameters[2]
+_valtype(_) = Any
 
 """
     JSONBase.lower(x)
@@ -97,7 +167,25 @@ Allow an object `x` to be "lowered" into a JSON-compatible representation.
 The 2nd method allows overloading lower for an object of type `T` for a specific
 key-value representing the field name (as a Symbol) and the field value being serialized.
 This allows customizing the serialization of a specific field of a type without
-needing to clash with other global `lower` methods.
+needing to clash with other global `lower` methods or lower an entire object
+when only specific fields need custom lowering.
+
+Examples of overloading `lower` for custom types could look like:
+    
+```julia
+struct Unknown end
+# custom sentinel value we want to be `null` in JSON
+JSONBase.lower(::Type{Unknown}) = nothing
+
+struct Person
+    name::String
+    birthdate::Date
+end
+
+# we want to serialize the birthdate as a string with
+# a non-default format
+JSONBase.lower(::Type{Person}, key, val) = key == :birthdate ? Dates.format(val, dateformat"mm/dd/yyyy") : lower(val)
+```
 """
 function lower end
 
@@ -116,26 +204,44 @@ lower(x::Matrix) = eachcol(x)
     JSONBase.lift(T, x)
     JSONBase.lift(::Type{T}, key, val)
 
-Allow a JSON-natural object `x` to be converted into the custom type `T`.
+Allow a JSON-native object `x` to be converted into the custom type `T`.
 This is used to allow for custom types to be constructed directly in the
 materialization process.
+
+"JSON-native object" means that `x` will be one of the following:
+  * `nothing`: parsed from `null`
+  * `true`/`false`: parsed from `true`/`false`
+  * An `Int64`, `Int128`, `BigInt`, `Float64`, or `BigFloat` value: parsed from a JSON number (exact type will be the lowest precision required)
+  * A `String`: parsed from a JSON string
+  * A `Vector{Any}`: parsed from a JSON array
+  * A `Dict{String, Any}`: parsed from a JSON object
+
+Note that the types used for JSON strings, arrays, and objects can be controlled via
+passing a custom [`JSONBase.Types`](@ref) object to [`JSONBase.materialize`](@ref) via
+the `types` keyword argument.
+
+Examples of overloading `lift` for custom types could look like:
+    
+```julia
+struct Unknown end
+# custom sentinel value we want from `null` in JSON
+JSONBase.lift(::Type{Unknown}, ::Nothing) = Unknown()
+
+# field-specific lift
+struct Person
+    name::String
+    birthdate::Date
+end
+
+# we know the JSON value for the birthdate field will be
+# a string with the format "mm/dd/yyyy"
+JSONBase.lift(::Type{Person}, key, val) = key == :birthdate ? Dates.parse(val, dateformat"mm/dd/yyyy") : val
+```
 """
 function lift end
 
 lift(::Type{T}, x) where {T} = Base.issingletontype(T) ? T() : convert(T, x)
-
 lift(::Type{T}, key::Symbol, val) where {T} = lift(fieldtype(T, key), val)
-@generated function lift(::Type{T}, key::AbstractString, val) where {T}
-    ex = quote
-        # @show T, key, val
-    end
-    for i = 1:fieldcount(T)
-        nm = String(fieldname(T, i))
-        push!(ex.args, :(key == $nm && return lift($(fieldtype(T, i)), val)))
-    end
-    push!(ex.args, :(return val))
-    return ex
-end
 
 # some default lift definitions for common types
 lift(::Type{T}, ::Nothing) where {T >: Missing} = T === Any ? nothing : missing
@@ -148,6 +254,23 @@ function lift(::Type{Char}, x::String)
         throw(ArgumentError("invalid `Char` from string value: \"$x\""))
     end
 end
+
+"""
+    JSONBase.arraylike(x)
+
+Overloadable method that allows a type `T` to be treated as an array
+when being serialized to JSON via `JSONBase.json`.
+Types overloading `arraylike`, must also overload `JSONBase.foreach`.
+Note that default `foreach` implementations exist for `AbstractArray`,
+`AbstractSet`.
+
+An example of overloading this method for a custom type `MyType` looks like:
+
+```julia
+JSONBase.arraylike(::MyType) = true
+```
+"""
+function arraylike end
 
 arraylike(_) = false
 arraylike(::Union{AbstractArray, AbstractSet, Tuple, Base.Generator}) = true
@@ -186,7 +309,6 @@ _string(x::Integer) = string(x)
     end
     for i = 1:N
         fname = fieldname(T, i)
-        ftype = fieldtype(T, i)
         str = _string(fname)
         push!(ex.args, quote
             field = get(fds, $(Meta.quot(fname)), nothing)

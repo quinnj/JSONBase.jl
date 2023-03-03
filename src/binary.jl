@@ -1,10 +1,10 @@
 """
     JSONBase.binary(json) -> JSONBase.BinaryValue
 
-Convert a JSON input (string, byte vector, io, LazyValue, etc)
+Convert a JSON input (String, byte vector, IO, LazyValue, etc)
 to an efficient, materialized, binary representation.
 No references to the original JSON input are kept, and the binary
-"tape" is independently valid/serializable.
+"tape" is independently valid/serializable (accessible via `JSONBase.gettape`).
 
 This binary format can be particularly efficient as a materialization vs.
 a generic representation (e.g. `Dict`, `Array`, etc.) when the JSON
@@ -12,8 +12,8 @@ has deeply nested structures.
 
 A `BinaryValue` is returned that supports the "selection" syntax,
 similar to LazyValue. The `BinaryValue` can also be materialized via:
-  * `JSONBase.materialize`: a generic Julia representation (Dict, Array, etc.)
-  * `JSONBase.materialize`: construct an instance of user-provided `T` from JSON
+  * `JSONBase.materialize(x)`: a generic Julia representation (Dict, Array, etc.)
+  * `JSONBase.materialize(x, T)`: construct an instance of user-provided `T` from the `BinaryValue`
 """
 function binary end
 
@@ -54,6 +54,7 @@ navigating the BinaryValue structure. BinaryValues can be materialized via:
   * `JSONBase.materialize`: construct an instance of user-provided `T` from JSON
 
 The BinaryValue is a "tape" of bytes that is independently valid/serializable/self-describing.
+
 The following is a description of the binary format for
 the various types of JSON values.
 
@@ -97,14 +98,15 @@ Note again that the total # of bytes for the object/array only includes
 the bytes for the elements, and not the meta byte or the 8 bytes for
 the 2 sizes (total # of bytes, # of elements). So an empty object or
 array will take up 9 bytes in the binary tape (1 meta byte, 4 bytes for
-the total # of bytes, 4 bytes for the # of elements, 0 for elements).
-
+the total # of bytes, 4 bytes for the # of elements, 0 bytes for elements).
 """
 struct BinaryValue
     tape::Vector{UInt8}
     pos::Int
     type::JSONTypes.T
 end
+
+BinaryValue(tape::Vector{UInt8}, pos::Int) = BinaryValue(tape, pos, gettype(tape, pos))
 
 Base.getindex(x::BinaryValue) = materialize(x)
 
@@ -138,8 +140,8 @@ end
 struct BinaryObjectClosure{T}
     tape::Vector{UInt8}
     x::LazyValue{T}
-    tape_i::Int
-    tape_nfields::Int
+    tape_i::Int # the position in the tape where we store the current i
+    tape_nfields::Int # the position in the tape where we store the current nfields
 end
 
 @inline function (f::BinaryObjectClosure{T})(k, v) where {T}
@@ -192,82 +194,102 @@ end
         @check 1 + 4 + 4
         # skip past our BinaryMeta tape slot for now
         i += 1
-        # now we're going to create a pointer to where we'll
-        # store the total # of bytes for the object
+        # now we're going to note the current position in the tape
+        # which is where we'll *eventually* store the total # of bytes
         # but we're actually going to use it to keep track of our
-        # current position in the tape while we encode all the
-        # object fields
+        # current position in the tape (i) while we recursively encode
+        # all the object fields
         tape_i = i
-        # we're also creating a pointer to where we'll store
-        # the # of fields in the object, which we'll update in our
+        i += 4
+        # we're also noting the position to where we'll store
+        # the # of fields in the object, which we'll use to update from our
         # BinaryObjectClosure for each field we process
-        i += 4
         tape_nfields = i
-        # we've now skipped 8 bytes for total # of bytes (4) and # of fields (4)
-        i += 4
-        # now we can start writing the fields
-        _writenumber(i % Int32, tape, tape_i)
         _writenumber(Int32(0), tape, tape_nfields)
+        i += 4
+        # we've now skipped 8 bytes for total # of bytes (4) and # of fields (4)
+        # now we can start writing the fields
+        # log our current i in our total bytes slot
+        _writenumber(i % Int32, tape, tape_i)
         c = BinaryObjectClosure(tape, x, tape_i, tape_nfields)
         pos = parseobject(c, x).pos
         # compute SizeMeta, even though we write nfields unconditionally
         _, sm = sizemeta(0)
-        # note: we pre-@checked earlier
+        # note: we pre-@checked earlier by leaving a slot for our BM byte
         tape[meta_i] = UInt8(BinaryMeta(JSONTypes.OBJECT, sm))
         # compute and store total # of bytes
+        # first we read the ending `i` from our tape_i slot
         i = Int(readnumber(tape, tape_i, Int32))
         nbytes = (i - meta_i) - # total bytes consumed so far
             1 - # for BinaryMeta
             4 - # for total # of bytes
             4 # for # of fields
         _writenumber(nbytes % Int32, tape, tape_i)
-        # store # of elements was stored in ptr_nfields while processing
+        # for the # of fields, it was incrementally updated
+        # in parseobject, so no need to do anything further
         return pos, i
     elseif gettype(x) == JSONTypes.ARRAY
         # skip past our BinaryMeta tape slot for now
         meta_i = i
         @check 1 + 4 + 4
         i += 1
-        # now we're going to create a pointer to where we'll
-        # store the total # of bytes for the array
+        # now we're going to note the current position in the tape
+        # where we'll store the total # of bytes for the array
         # but we're actually going to use it to keep track of our
         # current position in the tape while we encode all the
         # array elements
         tape_i = i
-        # we're also creating a pointer to where we'll store
+        i += 4
+        # we're also noting the position to where we'll store
         # the # of elements in the array, which we'll update in our
         # BinaryArrayClosure for each element we process
-        i += 4
         tape_nelems = i
-        # we've now skipped 8 bytes for total # of bytes (4) and # of elements (4)
+        _writenumber(Int32(0), tape, tape_nelems)
         i += 4
+        # we've now skipped 8 bytes for total # of bytes (4) and # of elements (4)
         # now we can start writing the elements
         _writenumber(i % Int32, tape, tape_i)
-        _writenumber(Int32(0), tape, tape_nelems)
         c = BinaryArrayClosure(tape, tape_i, tape_nelems)
         pos = parsearray(c, x).pos
         # compute SizeMeta, even though we write nelems unconditionally
+        #TODO: store eltype in SizeMeta or 0x1f if not homogenous?
         _, sm = sizemeta(0)
-        # store eltype in BinaryMeta size or 0x1f if not homogenous
         tape[meta_i] = UInt8(BinaryMeta(JSONTypes.ARRAY, sm))
         i = Int(readnumber(tape, tape_i, Int32))
         nbytes = (i - meta_i) - # total bytes consumed so far
             1 - # for BinaryMeta
             4 - # for total # of bytes
-            4 # for # of fields
+            4 # for # of elements
         # store total # of bytes
         _writenumber(nbytes % Int32, tape, tape_i)
-        # store # of elements was stored in ptr_nelems while processing
+        # for the # of elements, it was incrementally updated
+        # in parsearray, so no need to do anything further
         return pos, i
     elseif gettype(x) == JSONTypes.STRING
         y, pos = parsestring(x)
         return pos, _binary(y, tape, i, x)
     elseif gettype(x) == JSONTypes.NUMBER
         #TODO: explain the ref + unsafe_convert trick we're using here
+        # we're being tricksy hobits here
+        # we make a Ref that we want to use to track the new i
+        # once we've parsed the number, *BUT* we don't want to
+        # actually allocate the Ref on the heap, so we use
+        # unsafe_convert to convert it to a Ptr{Int}
+        # then we pass that Ptr{Int} to our BinaryNumberClosure
+        # which will use it to store the new i
+        # because the Ref never crosses a function "line", its allocation
+        # is elided by the compiler, but we make sure it lives during our
+        # parsenumber call via GC.@preserve
+        # Jameson Nash vouched that this is fine as long as we use a bitstype
+        # for the ref, which we do (Int)
         rx = Ref(0)
         c = BinaryNumberClosure(tape, i, Base.unsafe_convert(Ptr{Int}, rx), x)
-        pos = GC.@preserve rx parsenumber(c, x)
-        return pos, unsafe_load(c.newi)
+        GC.@preserve rx begin
+            pos = parsenumber(c, x)
+            # now we retrieve the new i from our ref pointer
+            i = unsafe_load(c.newi)
+        end
+        return pos, i
     elseif gettype(x) == JSONTypes.NULL
         @check 1
         tape[i] = UInt8(BinaryMeta(JSONTypes.NULL))
@@ -383,6 +405,8 @@ function writenumber(y::BigFloat, tape, i, x::LazyValue)
     # that has the BigFloat written out
     # and it returns the # of bytes _excluding_ the null terminator
     # in the written string
+    # we use the %Rg format specifier to get the shortest
+    # possible string representation
     pc = Ref{Ptr{UInt8}}()
     n = ccall((:mpfr_asprintf, libmpfr), Cint,
               (Ptr{Ptr{UInt8}}, Ptr{UInt8}, Ref{BigFloat}...),
@@ -624,6 +648,8 @@ function skip(x::BinaryValue)
     else
         bm = BinaryMeta(getbyte(tape, pos))
         pos += 1
+        #FIXME: if embedded_size is 0, then we need
+        # to read the next byte to skip the BigInt/BigFloat
         return pos + bm.size.embedded_size
     end
 end

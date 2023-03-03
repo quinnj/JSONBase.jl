@@ -17,7 +17,18 @@ materialized via:
 
 Currently supported keyword arguments include:
   * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float
-  * `jsonlines`: 
+  * `jsonlines`: treat the `json` input as an implicit JSON array,
+    delimited by newlines, each element being parsed from each row/line in the input
+
+Note that validation is only fully done on `null`, `true`, and `false`,
+while other values are only lazily inferred from the first non-whitespace character:
+  * `'{'`: JSON object
+  * `'['`: JSON array
+  * `'"'`: JSON string
+  * `'0'`-`'9'` or `'-'`: JSON number
+
+Further validation for these values is done later via `JSONBase.materialize`,
+or via selection syntax calls on a `LazyValue`.
 """
 function lazy end
 
@@ -237,6 +248,9 @@ _parsearray(keyvalfunc::F, x::LazyValue) where {F} =
             return Continue(pos + 1)
         end
     else
+        # for jsonlines, we need to make sure that recursive
+        # lazy values *don't* consider individual lines *also*
+        # to be jsonlines
         opts = withopts(opts, jsonlines=false)
     end
     i = 1
@@ -311,6 +325,7 @@ _parsenumber(valfunc::F, x::LazyValue) where {F} =
     buf, pos = getbuf(x), getpos(x)
     len = getlength(buf)
     b = getbyte(buf, pos)
+    # if user passed `float64=true`, then we hard-code only parse Float64
     if getopts(x).float64
         res = Parsers.xparse2(Float64, buf, pos, len)
         if Parsers.invalid(res.code)
@@ -336,8 +351,7 @@ end
 # for object/array/number, we pass a no-op keyvalfunc (pass)
 # to parseobject/parsearray/parsenumber
 # for string, we just ignore the returned PtrString
-# and for bool/null, we call materialize since it
-# is already efficient for skipping
+# and for bool/null, we just skip the appropriate number of bytes
 @inline function skip(x::LazyValue)
     T = gettype(x)
     if T == JSONTypes.OBJECT

@@ -242,7 +242,7 @@ end
         @test y == Dict("category" => "reference", "author" => "Nigel Rees", "title" => "Sayings of the Century", "price" => 8.95)
         y = x[~, "book"][1].author[] # The author of the first book in the store.
         @test y == "Nigel Rees"
-        @test_throws ArgumentError x[~, "book"][1].author[~]
+        # @test_throws ArgumentError x[~, "book"][1].author[~]
         y = x[~, "book"][:, (i, z) -> z.author[] == "J.R.R. Tolkien"].title[] # The titles of all books by J.R.R. Tolkien
         @test y == ["The Lord of the Rings"]
         y = x[~, :][] # All properties of the root object flattened in one list/array

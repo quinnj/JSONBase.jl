@@ -5,6 +5,7 @@ export Selectors
 using Mmap, Dates, UUIDs
 using Parsers
 
+# helper accessors
 getbuf(x) = getfield(x, :buf)
 getpos(x) = getfield(x, :pos)
 gettape(x) = getfield(x, :tape)
@@ -26,8 +27,13 @@ include("binary.jl")
 include("materialize.jl")
 include("json.jl")
 
+# a helper higher-order function that converts an
+# API.foreach function that operates potentially on a
+# PtrString to one that operates on a String
 keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
+# allow LazyValue/BinaryValue to participate in
+# selection syntax by overloading foreach
 function API.foreach(f, x::Union{LazyValue, BinaryValue})
     if gettype(x) == JSONTypes.OBJECT
         return parseobject(keyvaltostring(f), x)
@@ -38,6 +44,7 @@ function API.foreach(f, x::Union{LazyValue, BinaryValue})
     end
 end
 
+# this defines convenient getindex/getproperty methods
 Selectors.@selectors LazyValue
 Selectors.@selectors BinaryValue
 

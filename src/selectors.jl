@@ -1,12 +1,17 @@
+#TODO: add some example JSON to the docs here
+# and make a table like the one in https://support.smartbear.com/alertsite/docs/monitors/api/endpoint/jsonpath.html
+# of all the supported syntax
 """
     Selection syntax
 
-Special "selection syntax" is provided that allows easy querying of JSON objects and arrays using a syntax similar to XPath or CSS selectors.
+Special "selection syntax" is provided that allows easy querying of JSON objects and arrays using a syntax similar to XPath or CSS selectors,
+applied using common Julia syntax.
+
 This syntax mainly uses various forms of `getindex` to select elements of an object or array.
 Supported syntax includes:
-  * `x["key"]` / `x.key` / `x[:key]` - select the value associated with the key `"key"` in object `x`
-  * `x[:]` - select all values in object or array `x`, returned as a `Selectors.List`
-  * `x.key` - when `x` is a `List`, select the value for key `key` in each element of the `List`
+  * `x["key"]` / `x.key` / `x[:key]` / `x[1]` - select the value associated for a key in object `x` (key can be a String, Symbol, or Integer for an array)
+  * `x[:]` - select all values in object or array `x`, returned as a `Selectors.List`, which is a custom array type that supports the selection syntax
+  * `x.key` - when `x` is a `List`, select the value for key `key` in each element of the `List` (like a broadcasted `getindex`)
   * `x[~, key]` - recursively select all values in object or array `x` that have a key `key`
   * `x[~, :]` - recursively select all values in object or array `x`, returned as a flattened `List`
   * `x[:, (k, v) -> Bool]` - apply a key-value function `f` to each key-value/index-value in object or array `x`, and return a `List` of all values for which `f` returns `true`
@@ -75,6 +80,7 @@ function _getindex(x, key::Union{KeyInd, Integer})
         # indexing an array with a key, so we check
         # each element if it's an object and if the
         # object has the key
+        # like a broadcasted getindex over x
         values = List()
         foreach(x) do _, item
             if objectlike(item)
@@ -90,6 +96,7 @@ function _getindex(x, key::Union{KeyInd, Integer})
         return values
     elseif objectlike(x) || arraylike(x)
         # indexing object w/ key or array w/ index
+        # returns a single value
         ret = foreach(x) do k, v
             return eq(k, key) ? v : Continue()
         end
@@ -126,10 +133,11 @@ function _getindex(x, inds::Inds)
     return values
 end
 
-function _getindex(x, f::Base.Callable)
-    selectioncheck(x)
-    return _getindex(x, f(x))
-end
+#TODO: do we need this definition?
+# function _getindex(x, f::Base.Callable)
+#     selectioncheck(x)
+#     return _getindex(x, f(x))
+# end
 
 # return all values of an object or elements of an array as a List
 # that satisfy a key-value function

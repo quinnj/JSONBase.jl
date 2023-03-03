@@ -25,12 +25,22 @@ If `allow_inf` is `false`, throw an error if `Inf`, `-Inf`, or `NaN` is encounte
 `allow_inf` is `false` by default.
 
 By default, `x` must be a JSON-serializable object. Supported types include:
-  * `AbstractString` => JSON string
-  * `Bool` => JSON boolean
-  * `Nothing` => JSON null
-  * `Number` => JSON number
-  * `AbstractArray`/`Tuple`/`AbstractSet` => JSON array
-  * `AbstractDict`/`NamedTuple`/structs => JSON object
+  * `AbstractString` => JSON string: types must support the `AbstractString` interface, specifically with support for
+    `ncodeunits` and `codeunit(x, i)`.
+  * `Bool` => JSON boolean: must be `true` or `false`
+  * `Nothing` => JSON null: must be the `nothing` singleton value
+  * `Number` => JSON number: `Integer` or `Base.IEEEFloat` subtypes have default implementations
+    for other `Number` types, [`JSONBase.tostring`](@ref) is first called to convert
+    the value to a `String` before being written directly to JSON output
+  * `AbstractArray`/`Tuple`/`AbstractSet` => JSON array: objects for which `JSONBase.arraylike` returns `true`
+     are output as JSON arrays. `arraylike` is defined by default for
+    `AbstractArray`, `AbstractSet`, `Tuple`, and `Base.Generator`. For other types that define,
+    they must also properly implement [`JSONBase.foreach`](@ref) to iterate over the index => elements pairs.
+  * `AbstractDict`/`NamedTuple`/structs => JSON object: if a value doesn't fall into any of the above categories,
+    it is output as a JSON object. [`JSONBase.foreach`](@ref) is called, which has appropriate implementations
+    for `AbstractDict`, `NamedTuple`, and structs, where field names => values are iterated over. Field names can
+    be output using alternative JSON keys via [`JSONBase.fields`](@ref) overload. Typically, types shouldn't
+    need to overload `foreach`, however, since `JSONBase.lower` is much simpler (see below).
 
 If an object is not JSON-serializable, an override for [`JSONBase.lower`](@ref) can
 be defined to convert it to a JSON-serializable object. Some default `lower` defintions
@@ -41,6 +51,11 @@ are defined in JSONBase itself, like:
   * `lower(x::Regex) = x.pattern`
 
 These allow common Base/stdlib types to be serialized in an expected format.
+
+*NOTE*: `JSONBase.json` should _not_ be overloaded directly by custom
+types as this isn't robust for various output options (IO, String, etc.)
+and isn't conducive to recursive situations. Types should define an appropriate
+[`JSONBase.lower`](@ref) definition instead.
 """
 function json end
 
@@ -105,6 +120,7 @@ end
 @inline function (f::WriteClosure{arraylike, T})(key, val) where {arraylike, T}
     pos = unsafe_load(f.pos)
     buf = f.buf
+    # if not an array, we need to write the key + ':'
     if !arraylike
         pos = _string(buf, pos, key)
         @checkn 1
@@ -114,7 +130,9 @@ end
     else
         lowered = lower(val)
     end
+    # check if the lowered value is in our objectid set
     if lowered in f.objids
+        # if so, it's a circular reference! so we just write `null`
         pos = _null(buf, pos)
     else
         pos = json!(buf, pos, lowered, f.allow_inf, f.objids)
@@ -122,6 +140,7 @@ end
     @checkn 1
     buf[pos] = UInt8(',')
     pos += 1
+    # store our updated pos
     unsafe_store!(f.pos, pos)
     return Continue()
 end
@@ -318,14 +337,14 @@ _number(buf, pos, x, allow_inf) = _number(buf, pos, convert(Float64, x), allow_i
             end
             @checkn Base.Ryu.neededdigits(typeof(x))
             return Base.Ryu.writeshortest(buf, pos, x)
-        else
-            bytes = codeunits(Base.string(x))
-            sz = sizeof(bytes)
-            @checkn sz
-            for i = 1:sz
-                @inbounds buf[pos + i - 1] = bytes[i]
-            end
-            return pos + sz
         end
+    else
+        bytes = codeunits(tostring(x))
+        sz = sizeof(bytes)
+        @checkn sz
+        for i = 1:sz
+            @inbounds buf[pos + i - 1] = bytes[i]
+        end
+        return pos + sz
     end
 end
