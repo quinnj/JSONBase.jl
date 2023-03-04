@@ -30,6 +30,8 @@ end
     @test JSONBase.materialize(f("170141183460469231731687303715884105727")) === 170141183460469231731687303715884105727
     # only == here because BigInt don't compare w/ ===
     @test JSONBase.materialize(f("170141183460469231731687303715884105728")) == 170141183460469231731687303715884105728
+    # BigFloat
+    @test JSONBase.materialize(f("1.7976931348623157e310")) == big"1.7976931348623157e310"
 end
 
 @testset "Zeros: `$f`" for f in (JSONBase.lazy, JSONBase.binary)

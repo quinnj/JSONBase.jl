@@ -51,10 +51,6 @@ Selectors.@selectors BinaryValue
 end # module
 
 #TODO
- # ObjectLike, ArrayLike, JSONType, dictlike unification
-   # also clarify expected interfaces:
-     # for writing: strings, numbers, objects, arrays, etc
-     # for reading: strings, numbers, objects, arrays, etc
  # LazyObject/LazyArray/BinaryObject/BinaryArray to make them more convenient + display?
    # implement AbstractDict for LazyObject/BinaryObject
    # implement AbstractArray for LazyArray/BinaryArray

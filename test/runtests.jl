@@ -250,6 +250,39 @@ end
         @test_throws KeyError x.foo
         @test_throws KeyError x.store.book[100]
     end
+    # test that we correctly skip over all kinds of values
+    json = """
+    {
+        "a": 1,
+        "a1": 3.14,
+        "a2": 100000000000000000000000,
+        "a3": 170141183460469231731687303715884105728,
+        "a4": 1.7976931348623157e310,
+        "b": null,
+        "c": true,
+        "d": false,
+        "e": "hey there sailor",
+        "f": [],
+        "g": {},
+        "h": [1, 2, 3],
+        "i": {"a": 1, "b": 2},
+        "j": [1, {"a": 1, "b": 2}, 3],
+        "k": {"a": 1, "b": [1, 2, 3]},
+        "l": [1, {"a": 1, "b": [1, 2, 3]}, 3],
+        "m": {"a": 1, "b": {"a": 1, "b": 2}},
+        "n": [1, {"a": 1, "b": {"a": 1, "b": 2}}, 3],
+        "o": {"a": 1, "b": {"a": 1, "b": [1, 2, 3]}},
+        "p": [1, {"a": 1, "b": {"a": 1, "b": [1, 2, 3]}}, 3],
+        "q": {"a": 1, "b": {"a": 1, "b": {"a": 1, "b": 2}}},
+        "r": [1, {"a": 1, "b": {"a": 1, "b": {"a": 1, "b": 2}}}, 3],
+        "s": {"a": 1, "b": {"a": 1, "b": {"a": 1, "b": [1, 2, 3]}}},
+        "t": [1, {"a": 1, "b": {"a": 1, "b": {"a": 1, "b": [1, 2, 3]}}}, 3],
+        "z": 602
+    }
+    """
+    for x in (JSONBase.lazy(json), JSONBase.binary(json))
+        @test x.z[] == 602
+    end
 end
 
 include("struct.jl")

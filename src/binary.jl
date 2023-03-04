@@ -269,7 +269,6 @@ end
         y, pos = parsestring(x)
         return pos, _binary(y, tape, i, x)
     elseif gettype(x) == JSONTypes.NUMBER
-        #TODO: explain the ref + unsafe_convert trick we're using here
         # we're being tricksy hobits here
         # we make a Ref that we want to use to track the new i
         # once we've parsed the number, *BUT* we don't want to
@@ -405,12 +404,12 @@ function writenumber(y::BigFloat, tape, i, x::LazyValue)
     # that has the BigFloat written out
     # and it returns the # of bytes _excluding_ the null terminator
     # in the written string
-    # we use the %Rg format specifier to get the shortest
-    # possible string representation
+    # we use the %Ra (hex) format specifier since it maintains
+    # full precision while being shorter than %Re (that Base uses for display)
     pc = Ref{Ptr{UInt8}}()
     n = ccall((:mpfr_asprintf, libmpfr), Cint,
               (Ptr{Ptr{UInt8}}, Ptr{UInt8}, Ref{BigFloat}...),
-              pc, "%Rg", y)
+              pc, "%Ra", y)
     @assert n >= 0 "mpfr_asprintf failed"
     n += 1 # add null terminator
     p = pc[]
@@ -418,7 +417,7 @@ function writenumber(y::BigFloat, tape, i, x::LazyValue)
     sm = embedded_sizemeta(0)
     # need 1 for meta byte, 1 for size byte, and n for the string
     @check 1 + 1 + n
-    @assert n < 256 "BigFloat too large to encode in Binary: `$y`"
+    @assert n < 256 "BigFloat too large to encode in Binary: `$y` would take $n bytes"
     # first we store our BinaryMeta byte
     tape[i] = UInt8(BinaryMeta(JSONTypes.FLOAT, sm))
     i += 1
@@ -645,11 +644,17 @@ function skip(x::BinaryValue)
             # after the meta byte
             return pos + 4 + readnumber(tape, pos, Int32)
         end
-    else
+    elseif T == JSONTypes.INT || T == JSONTypes.FLOAT
         bm = BinaryMeta(getbyte(tape, pos))
         pos += 1
-        #FIXME: if embedded_size is 0, then we need
-        # to read the next byte to skip the BigInt/BigFloat
-        return pos + bm.size.embedded_size
+        sz = bm.size.embedded_size
+        if sz == 0
+            # if the size is 0, then we need to read the next byte
+            # to skip the BigInt/BigFloat
+            return pos + 1 + Int(getbyte(tape, pos))
+        end
+        return pos + (sz == 15 ? 16 : sz)
+    else
+        return pos + 1
     end
 end
