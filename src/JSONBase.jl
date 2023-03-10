@@ -32,9 +32,11 @@ include("json.jl")
 # PtrString to one that operates on a String
 keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
+const Values = Union{LazyValue, BinaryValue}
+
 # allow LazyValue/BinaryValue to participate in
 # selection syntax by overloading foreach
-function API.foreach(f, x::Union{LazyValue, BinaryValue})
+function API.foreach(f, x::Values)
     if gettype(x) == JSONTypes.OBJECT
         return parseobject(keyvaltostring(f), x)
     elseif gettype(x) == JSONTypes.ARRAY
@@ -44,6 +46,10 @@ function API.foreach(f, x::Union{LazyValue, BinaryValue})
     end
 end
 
+Base.getindex(x::Values) = materialize(x)
+Selectors.objectlike(x::Values) = gettype(x) == JSONTypes.OBJECT
+API.arraylike(x::Values) = gettype(x) == JSONTypes.ARRAY
+
 # this defines convenient getindex/getproperty methods
 Selectors.@selectors LazyValue
 Selectors.@selectors BinaryValue
@@ -51,9 +57,6 @@ Selectors.@selectors BinaryValue
 end # module
 
 #TODO
- # LazyObject/LazyArray/BinaryObject/BinaryArray to make them more convenient + display?
-   # implement AbstractDict for LazyObject/BinaryObject
-   # implement AbstractArray for LazyArray/BinaryArray
  # 3-5 common JSON processing tasks/workflows
    # eventually in docs
    # use to highlight selection syntax

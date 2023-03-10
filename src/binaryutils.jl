@@ -65,3 +65,80 @@ Base.show(io::IO, x::BinaryMeta) = print(io, "BinaryMeta(type=", x.type, ", size
 function BinaryMeta(type::JSONTypes.T, size::SizeMeta=SizeMeta(true))
     return BinaryMeta(UInt8(type) | (UInt8(size) << 3))
 end
+
+# utilities for showing BinaryValue
+gettype(::BinaryObject) = JSONTypes.OBJECT
+
+function Base.length(x::BinaryObject)
+    tape = gettape(x)
+    pos = getpos(x) + 5
+    return Int(readnumber(tape, pos, Int32))
+end
+
+struct IterateBinaryObjectClosure
+    kvs::Vector{Pair{String, BinaryValue}}
+end
+
+@inline function (f::IterateBinaryObjectClosure)(k, v)
+    push!(f.kvs, tostring(String, k) => v)
+    return Continue()
+end
+
+function Base.iterate(x::BinaryObject, st=nothing)
+    if st === nothing
+        # first iteration
+        kvs = Pair{String, BinaryValue}[]
+        parseobject(IterateBinaryObjectClosure(kvs), x)
+        i = 1
+    else
+        kvs = st[1]
+        i = st[2]
+    end
+    i > length(kvs) && return nothing
+    return kvs[i], (kvs, i + 1)
+end
+
+gettype(::BinaryArray) = JSONTypes.ARRAY
+
+Base.IndexStyle(::Type{<:BinaryArray}) = Base.IndexLinear()
+
+function Base.size(x::BinaryArray)
+    tape = gettape(x)
+    pos = getpos(x) + 5
+    return (Int(readnumber(tape, pos, Int32)),)
+end
+
+Base.isassigned(x::BinaryArray, i::Int) = true
+
+Base.getindex(x::BinaryArray, i::Int) = Selectors._getindex(x, i)
+API.foreach(f, x::BinaryArray) = parsearray(f, x)
+
+function Base.show(io::IO, x::BinaryValue)
+    T = gettype(x)
+    if T == JSONTypes.OBJECT
+        compact = get(io, :compact, false)::Bool
+        lo = BinaryObject(gettape(x), getpos(x))
+        if compact
+            show(io, lo)
+        else
+            io = IOContext(io, :compact => true)
+            show(io, MIME"text/plain"(), lo)
+        end
+    elseif T == JSONTypes.ARRAY
+        compact = get(io, :compact, false)::Bool
+        la = BinaryArray(gettape(x), getpos(x))
+        if compact
+            show(io, la)
+        else
+            io = IOContext(io, :compact => true)
+            show(io, MIME"text/plain"(), la)
+        end
+    elseif T == JSONTypes.STRING
+        str, _ = parsestring(x)
+        print(io, "JSONBase.BinaryValue(", repr(tostring(String, str)), ")")
+    elseif T == JSONTypes.NULL
+        print(io, "JSONBase.BinaryValue(nothing)")
+    else
+        print(io, "JSONBase.BinaryValue(", materialize(x), ")")
+    end
+end

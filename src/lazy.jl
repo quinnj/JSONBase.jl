@@ -67,17 +67,112 @@ struct LazyValue{T}
     opts::Options
 end
 
-getlength(x::LazyValue) = getlength(getbuf(x))
-
-function Base.show(io::IO, x::LazyValue)
-    print(io, "JSONBase.LazyValue(", gettype(x), ")")
+# only used for showing LazyValue
+struct LazyObject{T} <: AbstractDict{String, LazyValue}
+    buf::T
+    pos::Int
+    opts::Options
 end
 
-# TODO: change this to binary
-Base.getindex(x::LazyValue) = materialize(x)
+struct LazyArray{T} <: AbstractVector{LazyValue}
+    buf::T
+    pos::Int
+    opts::Options
+end
 
-Selectors.objectlike(x::LazyValue) = gettype(x) == JSONTypes.OBJECT
-API.arraylike(x::LazyValue) = gettype(x) == JSONTypes.ARRAY
+const LazyValues{T} = Union{LazyValue{T}, LazyObject{T}, LazyArray{T}}
+
+getlength(x::LazyValues) = getlength(getbuf(x))
+
+gettype(::LazyObject) = JSONTypes.OBJECT
+
+struct LengthClosure
+    len::Ptr{Int}
+end
+
+@inline function (f::LengthClosure)(_, _)
+    unsafe_store!(f.len, unsafe_load(f.len) + 1)
+    return Continue()
+end
+
+function Base.length(x::LazyObject)
+    ref = Ref(0)
+    lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
+    GC.@preserve ref begin
+        parseobject(lc, x)
+        return unsafe_load(lc.len)
+    end
+end
+
+struct IterateObjectClosure
+    kvs::Vector{Pair{String, LazyValue}}
+end
+
+@inline function (f::IterateObjectClosure)(k, v)
+    push!(f.kvs, tostring(String, k) => v)
+    return Continue()
+end
+
+function Base.iterate(x::LazyObject, st=nothing)
+    if st === nothing
+        # first iteration
+        kvs = Pair{String, LazyValue}[]
+        parseobject(IterateObjectClosure(kvs), x)
+        i = 1
+    else
+        kvs = st[1]
+        i = st[2]
+    end
+    i > length(kvs) && return nothing
+    return kvs[i], (kvs, i + 1)
+end
+
+gettype(::LazyArray) = JSONTypes.ARRAY
+
+Base.IndexStyle(::Type{<:LazyArray}) = Base.IndexLinear()
+
+function Base.size(x::LazyArray)
+    ref = Ref(0)
+    alc = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
+    GC.@preserve ref begin
+        parsearray(alc, x)
+        return (unsafe_load(alc.len),)
+    end
+end
+
+Base.isassigned(x::LazyArray, i::Int) = true
+Base.getindex(x::LazyArray, i::Int) = Selectors._getindex(x, i)
+API.foreach(f, x::LazyArray) = parsearray(f, x)
+
+function Base.show(io::IO, x::LazyValue)
+    T = gettype(x)
+    if T == JSONTypes.OBJECT
+        compact = get(io, :compact, false)::Bool
+        lo = LazyObject(getbuf(x), getpos(x), getopts(x))
+        if compact
+            show(io, lo)
+        else
+            io = IOContext(io, :compact => true)
+            show(io, MIME"text/plain"(), lo)
+        end
+    elseif T == JSONTypes.ARRAY
+        compact = get(io, :compact, false)::Bool
+        la = LazyArray(getbuf(x), getpos(x), getopts(x))
+        if compact
+            show(io, la)
+        else
+            io = IOContext(io, :compact => true)
+            show(io, MIME"text/plain"(), la)
+        end
+    elseif T == JSONTypes.STRING
+        str, _ = parsestring(x)
+        print(io, "JSONBase.LazyValue(", repr(tostring(String, str)), ")")
+    elseif T == JSONTypes.NULL
+        print(io, "JSONBase.LazyValue(nothing)")
+    else
+        print(io, "JSONBase.LazyValue(", materialize(x), ")")
+    end
+end
 
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
@@ -118,7 +213,7 @@ API.arraylike(x::LazyValue) = gettype(x) == JSONTypes.ARRAY
     invalid(error, buf, pos, Any)
 end
 
-_parseobject(keyvalfunc::F, x::LazyValue) where {F} =
+_parseobject(keyvalfunc::F, x::LazyValues) where {F} =
     parseobject(keyvalfunc, x)
 
 # core JSON object parsing function
@@ -128,7 +223,7 @@ _parseobject(keyvalfunc::F, x::LazyValue) where {F} =
 # this is done automatically in selection syntax via `keyvaltostring` transformer
 # returns an Continue(pos) value that notes the next position where parsing should
 # continue (selection syntax requires Continue to be returned from foreach)
-@inline function parseobject(keyvalfunc::F, x::LazyValue) where {F}
+@inline function parseobject(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)
@@ -220,7 +315,7 @@ macro jsonlines_checks()
     end)
 end
 
-_parsearray(keyvalfunc::F, x::LazyValue) where {F} =
+_parsearray(keyvalfunc::F, x::LazyValues) where {F} =
     parsearray(keyvalfunc, x)
 
 # core JSON array parsing function
@@ -230,7 +325,7 @@ _parsearray(keyvalfunc::F, x::LazyValue) where {F} =
 # so we use the index as the key
 # returns an Continue(pos) value that notes the next position where parsing should
 # continue (selection syntax requires Continue to be returned from foreach)
-@inline function parsearray(keyvalfunc::F, x::LazyValue) where {F}
+@inline function parsearray(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)

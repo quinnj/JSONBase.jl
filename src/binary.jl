@@ -108,15 +108,23 @@ end
 
 BinaryValue(tape::Vector{UInt8}, pos::Int) = BinaryValue(tape, pos, gettype(tape, pos))
 
-Base.getindex(x::BinaryValue) = materialize(x)
-
-Selectors.objectlike(x::BinaryValue) = gettype(x) == JSONTypes.OBJECT
-API.arraylike(x::BinaryValue) = gettype(x) == JSONTypes.ARRAY
-
 function gettype(tape::Vector{UInt8}, pos::Int)
     bm = BinaryMeta(getbyte(tape, pos))
     return bm.type
 end
+
+# only used for showing BinaryValue
+struct BinaryObject <: AbstractDict{String, BinaryValue}
+    tape::Vector{UInt8}
+    pos::Int
+end
+
+struct BinaryArray <: AbstractVector{BinaryValue}
+    tape::Vector{UInt8}
+    pos::Int
+end
+
+const BinaryValues = Union{BinaryValue, BinaryObject, BinaryArray}
 
 include("binaryutils.jl")
 
@@ -486,7 +494,7 @@ end
     return unsafe_load(ptr)
 end
 
-_parseobject(keyvalfunc::F, x::BinaryValue) where {F} =
+_parseobject(keyvalfunc::F, x::BinaryValues) where {F} =
     parseobject(keyvalfunc, x)
 
 # core object processing function for binary format
@@ -494,7 +502,7 @@ _parseobject(keyvalfunc::F, x::BinaryValue) where {F} =
 # then looping over them to call keyvalfunc on the
 # key-value pairs.
 # follows the same rules as parseobject on LazyValue for returning
-@inline function parseobject(keyvalfunc::F, x::BinaryValue) where {F}
+@inline function parseobject(keyvalfunc::F, x::BinaryValues) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -514,10 +522,10 @@ _parseobject(keyvalfunc::F, x::BinaryValue) where {F} =
     return Continue(pos)
 end
 
-_parsearray(keyvalfunc::F, x::BinaryValue) where {F} =
+_parsearray(keyvalfunc::F, x::BinaryValues) where {F} =
     parsearray(keyvalfunc, x)
 
-@inline function parsearray(keyvalfunc::F, x::BinaryValue) where {F}
+@inline function parsearray(keyvalfunc::F, x::BinaryValues) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))

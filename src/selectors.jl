@@ -198,12 +198,23 @@ end
 selectioncheck(x) = objectlike(x) || arraylike(x) || noselection(x)
 @noinline noselection(x) = throw(ArgumentError("Selection syntax not defined for: `$(typeof(x))))`"))
 
+function _propertynames(x)
+    selectioncheck(x)
+    nms = Symbol[]
+    foreach(x) do k, _
+        push!(keys, Symbol(k))
+        return Continue()
+    end
+    return nms
+end
+
 macro selectors(T)
     esc(quote
         Base.getindex(x::$T, arg) = Selectors._getindex(x, arg)
         Base.getindex(x::$T, ::Colon, arg) = Selectors._getindex(x, :, arg)
         Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(x, ~, arg)
         Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(x, key)
+        Base.propertynames(x::$T) = Selectors._propertynames(x)
     end)
 end
 
