@@ -88,7 +88,7 @@ function Base.iterate(x::BinaryObject, st=nothing)
     if st === nothing
         # first iteration
         kvs = Pair{String, BinaryValue}[]
-        parseobject(IterateBinaryObjectClosure(kvs), x)
+        applyobject(IterateBinaryObjectClosure(kvs), x)
         i = 1
     else
         kvs = st[1]
@@ -111,7 +111,7 @@ end
 Base.isassigned(x::BinaryArray, i::Int) = true
 
 Base.getindex(x::BinaryArray, i::Int) = Selectors._getindex(x, i)
-API.foreach(f, x::BinaryArray) = parsearray(f, x)
+API.applyeach(f, x::BinaryArray) = applyarray(f, x)
 
 function Base.show(io::IO, x::BinaryValue)
     T = gettype(x)

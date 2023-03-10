@@ -35,12 +35,12 @@ By default, `x` must be a JSON-serializable object. Supported types include:
   * `AbstractArray`/`Tuple`/`AbstractSet` => JSON array: objects for which `JSONBase.arraylike` returns `true`
      are output as JSON arrays. `arraylike` is defined by default for
     `AbstractArray`, `AbstractSet`, `Tuple`, and `Base.Generator`. For other types that define,
-    they must also properly implement [`JSONBase.foreach`](@ref) to iterate over the index => elements pairs.
+    they must also properly implement [`JSONBase.applyeach`](@ref) to iterate over the index => elements pairs.
   * `AbstractDict`/`NamedTuple`/structs => JSON object: if a value doesn't fall into any of the above categories,
-    it is output as a JSON object. [`JSONBase.foreach`](@ref) is called, which has appropriate implementations
+    it is output as a JSON object. [`JSONBase.applyeach`](@ref) is called, which has appropriate implementations
     for `AbstractDict`, `NamedTuple`, and structs, where field names => values are iterated over. Field names can
     be output using alternative JSON keys via [`JSONBase.fields`](@ref) overload. Typically, types shouldn't
-    need to overload `foreach`, however, since `JSONBase.lower` is much simpler (see below).
+    need to overload `applyeach`, however, since `JSONBase.lower` is much simpler (see below).
 
 If an object is not JSON-serializable, an override for [`JSONBase.lower`](@ref) can
 be defined to convert it to a JSON-serializable object. Some default `lower` defintions
@@ -100,7 +100,7 @@ struct WriteClosure{arraylike, T} # T is the type of the parent object/array bei
     objids::Base.IdSet{Any} # to track circular references
 end
 
-# API.foreach calls f(::String, val), but we want to call
+# API.applyeach calls f(::String, val), but we want to call
 # lower(T, ::Symbol, val), so translate here
 @generated function fieldsym(::Type{T}, key) where {T}
     ex = quote
@@ -188,7 +188,7 @@ function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{A
         # but, it also means objects might be written in ways that weren't
         # intended; in those cases, it should be determined whether an
         # appropriate `lower` method should be defined (preferred) or perhaps
-        # a custom `API.foreach` override to provide key-value pairs (more rare)
+        # a custom `API.applyeach` override to provide key-value pairs (more rare)
         al = arraylike(x)
         @checkn 1
         @inbounds buf[pos] = al ? UInt8('[') : UInt8('{')
@@ -199,7 +199,7 @@ function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{A
         objids = objids === nothing ? Base.IdSet{Any}() : objids
         push!(objids, x)
         c = WriteClosure{al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), allow_inf, objids)
-        GC.@preserve ref API.foreach(c, x)
+        GC.@preserve ref API.applyeach(c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
         # in WriteClosure, we eagerly write a comma after each element

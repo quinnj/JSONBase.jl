@@ -220,7 +220,7 @@ end
         # log our current i in our total bytes slot
         _writenumber(i % Int32, tape, tape_i)
         c = BinaryObjectClosure(tape, x, tape_i, tape_nfields)
-        pos = parseobject(c, x).pos
+        pos = applyobject(c, x).pos
         # compute SizeMeta, even though we write nfields unconditionally
         _, sm = sizemeta(0)
         # note: we pre-@checked earlier by leaving a slot for our BM byte
@@ -234,7 +234,7 @@ end
             4 # for # of fields
         _writenumber(nbytes % Int32, tape, tape_i)
         # for the # of fields, it was incrementally updated
-        # in parseobject, so no need to do anything further
+        # in applyobject, so no need to do anything further
         return pos, i
     elseif gettype(x) == JSONTypes.ARRAY
         # skip past our BinaryMeta tape slot for now
@@ -258,7 +258,7 @@ end
         # now we can start writing the elements
         _writenumber(i % Int32, tape, tape_i)
         c = BinaryArrayClosure(tape, tape_i, tape_nelems)
-        pos = parsearray(c, x).pos
+        pos = applyarray(c, x).pos
         # compute SizeMeta, even though we write nelems unconditionally
         #TODO: store eltype in SizeMeta or 0x1f if not homogenous?
         _, sm = sizemeta(0)
@@ -271,7 +271,7 @@ end
         # store total # of bytes
         _writenumber(nbytes % Int32, tape, tape_i)
         # for the # of elements, it was incrementally updated
-        # in parsearray, so no need to do anything further
+        # in applyarray, so no need to do anything further
         return pos, i
     elseif gettype(x) == JSONTypes.STRING
         y, pos = parsestring(x)
@@ -286,13 +286,13 @@ end
         # which will use it to store the new i
         # because the Ref never crosses a function "line", its allocation
         # is elided by the compiler, but we make sure it lives during our
-        # parsenumber call via GC.@preserve
+        # applynumber call via GC.@preserve
         # Jameson Nash vouched that this is fine as long as we use a bitstype
         # for the ref, which we do (Int)
         rx = Ref(0)
         c = BinaryNumberClosure(tape, i, Base.unsafe_convert(Ptr{Int}, rx), x)
         GC.@preserve rx begin
-            pos = parsenumber(c, x)
+            pos = applynumber(c, x)
             # now we retrieve the new i from our ref pointer
             i = unsafe_load(c.newi)
         end
@@ -494,15 +494,12 @@ end
     return unsafe_load(ptr)
 end
 
-_parseobject(keyvalfunc::F, x::BinaryValues) where {F} =
-    parseobject(keyvalfunc, x)
-
 # core object processing function for binary format
 # we're really just reading the number of fields
 # then looping over them to call keyvalfunc on the
 # key-value pairs.
-# follows the same rules as parseobject on LazyValue for returning
-@inline function parseobject(keyvalfunc::F, x::BinaryValues) where {F}
+# follows the same rules as applyobject on LazyValue for returning
+@inline function applyobject(keyvalfunc::F, x::BinaryValues) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -522,10 +519,7 @@ _parseobject(keyvalfunc::F, x::BinaryValues) where {F} =
     return Continue(pos)
 end
 
-_parsearray(keyvalfunc::F, x::BinaryValues) where {F} =
-    parsearray(keyvalfunc, x)
-
-@inline function parsearray(keyvalfunc::F, x::BinaryValues) where {F}
+@inline function applyarray(keyvalfunc::F, x::BinaryValues) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -564,14 +558,13 @@ end
     return PtrString(pointer(tape, pos), len, false), pos + len
 end
 
-_parseint(valfunc::F, x::BinaryValue) where {F} =
-    parseint(valfunc, x)
+_applyint(f::F, x::BinaryValue) where {F} = applyint(f, x)
 
 # reading an integer from binary format involves
 # inspecting the BinaryMeta byte to determine the
 # # of bytes the integer takes for encoding,
 # or switching to BigInt decoding if the embedded size is 0
-@inline function parseint(valfunc::F, x::BinaryValue) where {F}
+@inline function applyint(valfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -600,10 +593,9 @@ _parseint(valfunc::F, x::BinaryValue) where {F} =
     return pos + sz
 end
 
-_parsefloat(valfunc::F, x::BinaryValue) where {F} =
-    parsefloat(valfunc, x)
+_applyfloat(f::F, x::BinaryValue) where {F} = applyfloat(f, x)
 
-@inline function parsefloat(valfunc::F, x::BinaryValue) where {F}
+@inline function applyfloat(valfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))

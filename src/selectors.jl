@@ -18,7 +18,7 @@ Supported syntax includes:
 """
 module Selectors
 
-import ..API: foreach, Continue, arraylike
+import ..API: applyeach, Continue, arraylike
 import ..PtrString
 import ..streq
 
@@ -50,7 +50,7 @@ Base.append!(x::List, items_to_append) = append!(items(x), items_to_append)
 
 arraylike(::List) = true
 
-function foreach(f, x::List)
+function applyeach(f, x::List)
     # note that there should *never* be #undef
     # values in a list, since we only ever initialize
     # one empty, then push!/append! to it
@@ -82,7 +82,7 @@ function _getindex(x, key::Union{KeyInd, Integer})
         # object has the key
         # like a broadcasted getindex over x
         values = List()
-        foreach(x) do _, item
+        applyeach(x) do _, item
             if objectlike(item)
                 ret = _getindex(item, key)
                 if ret isa List
@@ -97,7 +97,7 @@ function _getindex(x, key::Union{KeyInd, Integer})
     elseif objectlike(x) || arraylike(x)
         # indexing object w/ key or array w/ index
         # returns a single value
-        ret = foreach(x) do k, v
+        ret = applyeach(x) do k, v
             return eq(k, key) ? v : Continue()
         end
         ret isa Continue && throw(KeyError(key))
@@ -111,7 +111,7 @@ end
 function _getindex(x, ::Colon)
     selectioncheck(x)
     values = List()
-    foreach(x) do _, v
+    applyeach(x) do _, v
         push!(values, v)
         return Continue()
     end
@@ -125,7 +125,7 @@ _getindex(x::List, ::Colon) = x
 function _getindex(x, inds::Inds)
     selectioncheck(x)
     values = List()
-    foreach(x) do k, v
+    applyeach(x) do k, v
         i = findfirst(eq(k), inds)
         i !== nothing && push!(values, v)
         return Continue()
@@ -144,7 +144,7 @@ end
 function _getindex(x, ::Colon, f::Base.Callable)
     selectioncheck(x)
     values = List()
-    foreach(x) do k, v
+    applyeach(x) do k, v
         f(k, v) && push!(values, v)
         return Continue()
     end
@@ -156,12 +156,12 @@ end
 function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
     values = List()
     if objectlike(x)
-        foreach(x) do k, v
+        applyeach(x) do k, v
             if key === Colon()
                 push!(values, v)
             elseif eq(k, key)
                 if arraylike(v)
-                    foreach(v) do _, vv
+                    applyeach(v) do _, vv
                         push!(values, vv)
                         return Continue()
                     end
@@ -179,7 +179,7 @@ function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
             return Continue()
         end
     elseif arraylike(x)
-        foreach(x) do _, item
+        applyeach(x) do _, item
             if objectlike(item)
                 ret = _getindex(item, ~, key)
                 append!(values, ret)
@@ -201,7 +201,7 @@ selectioncheck(x) = objectlike(x) || arraylike(x) || noselection(x)
 function _propertynames(x)
     selectioncheck(x)
     nms = Symbol[]
-    foreach(x) do k, _
+    applyeach(x) do k, _
         push!(nms, Symbol(k))
         return Continue()
     end

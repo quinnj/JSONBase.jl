@@ -29,12 +29,13 @@ Supported keyword arguments include:
 """
 function materialize end
 
+#TODO: support dictlike w/ materialize!
 """
     JSONBase.materialize!(json, x)
 
 Similar to [`materialize`](@ref), but materializes into an existing object `x`,
 which supports the "mutable" strategy for construction; that is,
-JSON object keys are matched to field names and `setpropty!(x, field, value)` is called.
+JSON object keys are matched to field names and `setproperty!(x, field, value)` is called.
 """
 function materialize! end
 
@@ -169,12 +170,12 @@ end
     if type == JSONTypes.OBJECT
         if T === Any
             d = O()
-            pos = parseobject(GenericObjectClosure{O, O}(d), x).pos
+            pos = applyobject(GenericObjectClosure{O, O}(d), x).pos
             valfunc(d)
             return pos
         elseif dictlike(T)
             d = T()
-            pos = parseobject(GenericObjectClosure{T, O}(d), x).pos
+            pos = applyobject(GenericObjectClosure{T, O}(d), x).pos
             valfunc(d)
             return pos
         elseif mutable(T)
@@ -185,7 +186,7 @@ end
         elseif kwdef(T)
             kws = Pair{Symbol, Any}[]
             c = KwClosure{T, O}(kws)
-            pos = parseobject(c, x).pos
+            pos = applyobject(c, x).pos
             y = T(; kws...)
             valfunc(y)
             return pos
@@ -194,7 +195,7 @@ end
             N = fieldcount(T)
             vec = Vector{Any}(undef, N)
             sc = StructClosure{T, O}(vec)
-            pos = parseobject(sc, x).pos
+            pos = applyobject(sc, x).pos
             constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
             construct(T, constructor, vec, valfunc)
             return pos
@@ -203,7 +204,7 @@ end
         if T === Any
             A = Vector{Any}
             a = initarray(A)
-            pos = parsearray(GenericArrayClosure{A, O}(a), x).pos
+            pos = applyarray(GenericArrayClosure{A, O}(a), x).pos
             valfunc(a)
             return pos
         elseif T <: Matrix
@@ -211,30 +212,30 @@ end
             # special-case Matrix
             # must be an array of arrays, where each array element is the same length
             # we need to peek ahead to figure out the size
-            sz = parsearray(x) do i, v
+            sz = applyarray(x) do i, v
                 # v is the 1st column of our matrix
                 # but we really just want to know the length
                 gettype(v) == JSONTypes.ARRAY || throw(ArgumentError("expected array of arrays for materializing"))
                 ref = Ref(0)
                 alc = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
-                GC.@preserve ref parsearray(alc, v)
+                GC.@preserve ref applyarray(alc, v)
                 # by returning the len here, we're short-circuiting the initial
-                # parsearray call
+                # applyarray call
                 return unsafe_load(alc.len)
             end
             m = T(undef, (sz, sz))
             # now we do the actual parsing to fill in our matrix
-            cont = parsearray(x) do i, v
+            cont = applyarray(x) do i, v
                 # i is the column index of our matrix
                 # v is the 1st column of our matrix
                 mc = MatrixClosure{T, O}(m, i)
-                return parsearray(mc, v)
+                return applyarray(mc, v)
             end
             valfunc(m)
             return cont.pos
         else
             a = initarray(T)
-            pos = parsearray(GenericArrayClosure{T, O}(a), x).pos
+            pos = applyarray(GenericArrayClosure{T, O}(a), x).pos
             valfunc(a)
             return pos
         end
@@ -243,11 +244,11 @@ end
         valfunc(tostring(T, str))
         return pos
     elseif x isa LazyValue && type == JSONTypes.NUMBER # only LazyValue
-        return parsenumber(valfunc, x)
+        return applynumber(valfunc, x)
     elseif x isa BinaryValue && type == JSONTypes.INT # only BinaryValue
-        return parseint(valfunc, x)
+        return applyint(valfunc, x)
     elseif x isa BinaryValue && type == JSONTypes.FLOAT # only BinaryValue
-        return parsefloat(valfunc, x)
+        return applyfloat(valfunc, x)
     elseif type == JSONTypes.NULL
         valfunc(nothing)
         return getpos(x) + (x isa BinaryValue ? 1 : 4)
@@ -384,5 +385,5 @@ end
 
 function materialize!(x::Union{LazyValue, BinaryValue}, y::T, objecttype::Type{O}=Dict{String, Any}) where {T, O}
     c = MutableClosure{T, O}(y)
-    return parseobject(c, x).pos
+    return applyobject(c, x).pos
 end

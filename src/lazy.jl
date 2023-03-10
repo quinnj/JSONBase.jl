@@ -99,7 +99,7 @@ function Base.length(x::LazyObject)
     ref = Ref(0)
     lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
     GC.@preserve ref begin
-        parseobject(lc, x)
+        applyobject(lc, x)
         return unsafe_load(lc.len)
     end
 end
@@ -117,7 +117,7 @@ function Base.iterate(x::LazyObject, st=nothing)
     if st === nothing
         # first iteration
         kvs = Pair{String, LazyValue}[]
-        parseobject(IterateObjectClosure(kvs), x)
+        applyobject(IterateObjectClosure(kvs), x)
         i = 1
     else
         kvs = st[1]
@@ -135,14 +135,14 @@ function Base.size(x::LazyArray)
     ref = Ref(0)
     alc = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
     GC.@preserve ref begin
-        parsearray(alc, x)
+        applyarray(alc, x)
         return (unsafe_load(alc.len),)
     end
 end
 
 Base.isassigned(x::LazyArray, i::Int) = true
 Base.getindex(x::LazyArray, i::Int) = Selectors._getindex(x, i)
-API.foreach(f, x::LazyArray) = parsearray(f, x)
+API.applyeach(f, x::LazyArray) = applyarray(f, x)
 
 function Base.show(io::IO, x::LazyValue)
     T = gettype(x)
@@ -213,8 +213,8 @@ end
     invalid(error, buf, pos, Any)
 end
 
-_parseobject(keyvalfunc::F, x::LazyValues) where {F} =
-    parseobject(keyvalfunc, x)
+# non-inlined version of applyobject
+_applyobject(f::F, x) where {F} = applyobject(f, x)
 
 # core JSON object parsing function
 # takes a `keyvalfunc` that is applied to each key/value pair
@@ -222,8 +222,8 @@ _parseobject(keyvalfunc::F, x::LazyValues) where {F} =
 # to materialize the key, call `tostring(key)`
 # this is done automatically in selection syntax via `keyvaltostring` transformer
 # returns an Continue(pos) value that notes the next position where parsing should
-# continue (selection syntax requires Continue to be returned from foreach)
-@inline function parseobject(keyvalfunc::F, x::LazyValues) where {F}
+# continue (selection syntax requires Continue to be returned from applyeach)
+@inline function applyobject(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)
@@ -315,17 +315,17 @@ macro jsonlines_checks()
     end)
 end
 
-_parsearray(keyvalfunc::F, x::LazyValues) where {F} =
-    parsearray(keyvalfunc, x)
+# non-inlined version of applyarray
+_applyarray(f::F, x) where {F} = applyarray(f, x)
 
 # core JSON array parsing function
 # takes a `keyvalfunc` that is applied to each index => value element
 # `keyvalfunc` is provided a Int => LazyValue pair
-# foreach always requires a key-value pair function
+# applyeach always requires a key-value pair function
 # so we use the index as the key
 # returns an Continue(pos) value that notes the next position where parsing should
-# continue (selection syntax requires Continue to be returned from foreach)
-@inline function parsearray(keyvalfunc::F, x::LazyValues) where {F}
+# continue (selection syntax requires Continue to be returned from applyeach)
+@inline function applyarray(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)
@@ -409,14 +409,13 @@ end
     invalid(error, buf, pos, "string")
 end
 
-_parsenumber(valfunc::F, x::LazyValue) where {F} =
-    parsenumber(valfunc, x)
+_applynumber(f::F, x::LazyValue) where {F} = applynumber(f, x)
 
 # core JSON number parsing function
 # we rely on functionality in Parsers to help infer what kind
 # of number we're parsing; valid return types include:
 # Int64, Int128, BigInt, Float64 or BigFloat
-@inline function parsenumber(valfunc::F, x::LazyValue) where {F}
+@inline function applynumber(valfunc::F, x::LazyValue) where {F}
     buf, pos = getbuf(x), getpos(x)
     len = getlength(buf)
     b = getbyte(buf, pos)
@@ -444,20 +443,20 @@ end
 
 # efficiently skip over a JSON value
 # for object/array/number, we pass a no-op keyvalfunc (pass)
-# to parseobject/parsearray/parsenumber
+# to applyobject/applyarray/applynumber
 # for string, we just ignore the returned PtrString
 # and for bool/null, we just skip the appropriate number of bytes
 @inline function skip(x::LazyValue)
     T = gettype(x)
     if T == JSONTypes.OBJECT
-        return _parseobject(pass, x).pos
+        return _applyobject(pass, x).pos
     elseif T == JSONTypes.ARRAY
-        return _parsearray(pass, x).pos
+        return _applyarray(pass, x).pos
     elseif T == JSONTypes.STRING
         _, pos = parsestring(x)
         return pos
     elseif T == JSONTypes.NUMBER
-        return _parsenumber(pass, x)
+        return _applynumber(pass, x)
     elseif T == JSONTypes.TRUE
         return getpos(x) + 4
     elseif T == JSONTypes.FALSE

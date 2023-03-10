@@ -2,24 +2,24 @@ module API
 
 using Dates, UUIDs
 
-export foreach, Continue, fields, mutable, kwdef,
+export applyeach, Continue, fields, mutable, kwdef,
        dictlike, addkeyval!, _keytype, _valtype,
        lower, lift, arraylike
 
 """
-    JSONBase.foreach(f, x)
+    JSONBase.applyeach(f, x)
 
-A custom `foreach` function that operates specifically on pairs,
+A custom `applyeach` function that operates specifically on `(key, val)` or `(ind, val)` pairs,
 supports short-circuiting, and can return an updated state via `JSONBase.Continue`.
 For each key-value or index-value pair in `x`, call `f(k, v)`.
-If `f` doesn't return an `JSONBase.Continue` instance, `foreach` should
+If `f` doesn't return an `JSONBase.Continue` instance, `applyeach` should
 return the non-`Continue` value immediately and stop iterating.
-`foreach` should return `JSONBase.Continue` once iterating is complete.
+`applyeach` should return `JSONBase.Continue` once iterating is complete.
 
-An example overload of `foreach` for a generic iterable would be:
+An example overload of `applyeach` for a generic iterable would be:
 
 ```julia
-function JSONBase.foreach(f, x::MyIterable)
+function JSONBase.applyeach(f, x::MyIterable)
     for (i, v) in enumerate(x)
         ret = f(i, v)
         # if `f` doesn't return Continue, return immediately
@@ -29,13 +29,13 @@ function JSONBase.foreach(f, x::MyIterable)
 end
 ```
 """
-function foreach end
+function applyeach end
 
 """
     JSONBase.Continue(state)
 
-A special sentinel value for use with `JSONBase.foreach`, that indicates
-that `foreach` should continue iterating.
+A special sentinel value for use with `JSONBase.applyeach`, that indicates
+that `applyeach` should continue iterating.
 """
 struct Continue
     pos::Int
@@ -258,8 +258,8 @@ end
 
 Overloadable method that allows a type `T` to be treated as an array
 when being serialized to JSON via `JSONBase.json`.
-Types overloading `arraylike`, must also overload `JSONBase.foreach`.
-Note that default `foreach` implementations exist for `AbstractArray`,
+Types overloading `arraylike`, must also overload `JSONBase.applyeach`.
+Note that default `applyeach` implementations exist for `AbstractArray`,
 `AbstractSet`.
 
 An example of overloading this method for a custom type `MyType` looks like:
@@ -273,7 +273,7 @@ function arraylike end
 arraylike(_) = false
 arraylike(::Union{AbstractArray, AbstractSet, Tuple, Base.Generator}) = true
 
-@inline function foreach(f, x::AbstractArray)
+@inline function applyeach(f, x::AbstractArray)
     for i in eachindex(x)
         ret = if isassigned(x, i)
             f(i, x[i])
@@ -287,7 +287,7 @@ end
 
 # appropriate definition for iterables that
 # can't have #undef values
-@inline function foreach(f, x::Union{AbstractSet, Base.Generator})
+@inline function applyeach(f, x::Union{AbstractSet, Base.Generator})
     for (i, v) in enumerate(x)
         ret = f(i, v)
         ret isa Continue || return ret
@@ -299,7 +299,7 @@ _string(x) = String(x)
 _string(x::Integer) = string(x)
 
 # generic definition for Tuple, NamedTuple, structs
-@generated function foreach(f, x::T) where {T}
+@generated function applyeach(f, x::T) where {T}
     N = fieldcount(T)
     ex = quote
         Base.@_inline_meta
@@ -323,7 +323,7 @@ _string(x::Integer) = string(x)
     return ex
 end
 
-function foreach(f, x::AbstractDict)
+function applyeach(f, x::AbstractDict)
     for (k, v) in x
         ret = f(k, v)
         ret isa Continue || return ret
@@ -331,7 +331,7 @@ function foreach(f, x::AbstractDict)
     return Continue()
 end
 
-# convenience function that calls API.foreach on x
+# convenience function that calls API.applyeach on x
 # but applies the function to just the 1st item
 struct ApplyOnce{F}
     f::F
@@ -339,6 +339,6 @@ end
 
 @inline (f::ApplyOnce)(k, v) = f.f(v)
 
-applyonce(f, x) = foreach(ApplyOnce(f), x)
+applyonce(f, x) = applyeach(ApplyOnce(f), x)
 
 end # module API

@@ -28,19 +28,19 @@ include("materialize.jl")
 include("json.jl")
 
 # a helper higher-order function that converts an
-# API.foreach function that operates potentially on a
+# API.applyeach function that operates potentially on a
 # PtrString to one that operates on a String
 keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
 const Values = Union{LazyValue, BinaryValue}
 
 # allow LazyValue/BinaryValue to participate in
-# selection syntax by overloading foreach
-function API.foreach(f, x::Values)
+# selection syntax by overloading applyeach
+function API.applyeach(f, x::Values)
     if gettype(x) == JSONTypes.OBJECT
-        return parseobject(keyvaltostring(f), x)
+        return applyobject(keyvaltostring(f), x)
     elseif gettype(x) == JSONTypes.ARRAY
-        return parsearray(f, x)
+        return applyarray(f, x)
     else
         throw(ArgumentError("`$x` is not an object or array and not eligible for selection syntax"))
     end
@@ -70,9 +70,9 @@ end # module
        # convert to concrete struct
      # large jsonlines/object/array production processing
        # iterate each line: lazy, binary, materialize
-       # start with lazy, API.foreach on LazyValue
+       # start with lazy, API.applyeach on LazyValue
        # preallocate tape buffer, call binary! w/ preallocated buffer
-       # in keyvalfunc to API.foreach,
+       # in keyvalfunc to API.applyeach,
        # then call materialize
      # large, deeply nested json structures
        # use selection syntax to lazily navigate
@@ -83,5 +83,5 @@ end # module
        # support jsonlines output
  # package docs
  # topretty
- # allow materialize on any ObjectLike? i.e. Dicts? (would need parseobject on Dict)
+ # allow materialize on any ObjectLike? i.e. Dicts? (would need applyobject on Dict)
  # checkout JSON5, Amazon Ion?
