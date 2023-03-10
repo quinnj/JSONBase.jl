@@ -202,7 +202,7 @@ function _propertynames(x)
     selectioncheck(x)
     nms = Symbol[]
     foreach(x) do k, _
-        push!(keys, Symbol(k))
+        push!(nms, Symbol(k))
         return Continue()
     end
     return nms

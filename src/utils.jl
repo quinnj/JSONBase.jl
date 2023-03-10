@@ -22,30 +22,6 @@ withopts(opts; kw...) = Options(;
 
 const OPTIONS = Options()
 
-# helper struct for overloading default object,
-# array, and string types to use during materialization
-struct Types{O, A, S} end
-
-Types(;
-    stringtype::Type=String,
-    objecttype::Type=Dict{stringtype, Any},
-    arraytype::Type=Vector{Any}) =
-    Types{objecttype, arraytype, stringtype}
-
-objecttype(::Type{Types{O, A, S}}) where {O, A, S} = O
-arraytype(::Type{Types{O, A, S}}) where {O, A, S} = A
-stringtype(::Type{Types{O, A, S}}) where {O, A, S} = S
-
-withobjecttype(::Type{Types{O, A, S}}, ::Type{O2}) where {O, A, S, O2} = Types{O2, A, S}
-witharraytype(::Type{Types{O, A, S}}, ::Type{A2}) where {O, A, S, A2} = Types{O, A2, S}
-withstringtype(::Type{Types{O, A, S}}, ::Type{S2}) where {O, A, S, S2} = Types{O, A, S2}
-
-const TYPES = Types()
-
-withobjecttype(::Type{O2}) where {O2} = Types(; objecttype=O2)
-witharraytype(::Type{A2}) where {A2} =  Types(; arraytype=A2)
-withstringtype(::Type{S2}) where {S2} = Types(; stringtype=S2)
-
 # scoped enum
 module JSONTypes
     primitive type T 8 end

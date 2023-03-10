@@ -6,8 +6,6 @@ export foreach, Continue, fields, mutable, kwdef,
        dictlike, addkeyval!, _keytype, _valtype,
        lower, lift, arraylike
 
-import ..Types
-
 """
     JSONBase.foreach(f, x)
 
@@ -134,6 +132,8 @@ Specifically, the "dictlike" strategy requires that a type support:
   * `T()`: any empty constructor
   * `T <: AbstractDict`: `T` must subtype and implement the `AbstractDict` interface;
     JSON object key-value pairs will be added to the object via `setindex!`
+  * Must support the `keytype` and `valtype` functions, which return the key and value
+    types of the `T` object
 
 To add support for the "dictlike" strategy for a custom type `MyType` the definition would be:
     
@@ -152,12 +152,10 @@ dictlike(_) = false
 addkeyval!(d::AbstractDict, k, v) = d[k] = v
 addkeyval!(d::AbstractVector, k, v) = push!(d, k => v)
 
-_keytype(d::AbstractDict, ::Type{Types{O, A, S}}) where {O, A, S} = keytype(d)
-_keytype(d::AbstractVector{<:Pair}, ::Type{Types{O, A, S}}) where {O, A, S} = eltype(d).parameters[1]
-_keytype(d, ::Type{Types{O, A, S}}) where {O, A, S} = S
-_valtype(d::AbstractDict) = valtype(d)
+_keytype(d) = keytype(d)
+_keytype(d::AbstractVector{<:Pair}) = eltype(d).parameters[1]
+_valtype(d) = valtype(d)
 _valtype(d::AbstractVector{<:Pair}) = eltype(d).parameters[2]
-_valtype(_) = Any
 
 """
     JSONBase.lower(x)

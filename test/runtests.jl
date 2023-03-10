@@ -1,4 +1,4 @@
-using Test, JSONBase, UUIDs, Dates #, BenchmarkTools, JSON
+using Test, JSONBase, UUIDs, Dates, OrderedCollections #, BenchmarkTools, JSON
 
 # helper struct for testing reading json from files
 struct File end
@@ -120,12 +120,11 @@ struct File end
      Dict("name" => "Deloise", "wins" => [["three of a kind", "5♣"]])]
 end
 
-@testset "Non-default object/array types: `JSONBase.$f`" for f in (JSONBase.lazy, JSONBase.binary)
-    @test JSONBase.materialize(f("[1,2,3]"); types=JSONBase.witharraytype(Vector{Int})) isa Vector{Int}
-    @test JSONBase.materialize(f("[1,2,3]"); types=JSONBase.witharraytype(Set{Int})) isa Set{Int}
+@testset "Non-default object types: `JSONBase.$f`" for f in (JSONBase.lazy, JSONBase.binary)
     # test objecttype keyword arg
-    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); types=JSONBase.withobjecttype(Dict{String, Int})) isa Dict{String, Int}
-    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); types=JSONBase.withobjecttype(Vector{Pair{String, Int}})) isa Vector{Pair{String, Int}}
+    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=Dict{String, Int}) isa Dict{String, Int}
+    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=Vector{Pair{String, Int}}) isa Vector{Pair{String, Int}}
+    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=OrderedDict{String, Int}) isa OrderedDict{String, Int}
 end
 
 @testset "BinaryValue" begin
@@ -228,6 +227,7 @@ end
     # x = JSONBase.lazy(json)
     # x = JSONBase.binary(json)
     for x in (JSONBase.lazy(json), JSONBase.binary(json))
+        @test propertynames(x) == [:store, :expensive]
         y = x.store[:][] # All direct properties of store (not recursive).
         @test length(y) == 2 && y[1] isa Vector{Any} && y[2] isa Dict{String, Any}
         y = x.store.bicycle.color[] # The color of the bicycle in the store.
