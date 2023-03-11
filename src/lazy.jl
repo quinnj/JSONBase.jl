@@ -201,9 +201,7 @@ end
         getbyte(buf,pos + 3) == UInt8('s') &&
         getbyte(buf,pos + 4) == UInt8('e')
         return LazyValue(buf, pos, JSONTypes.FALSE, opts)
-    elseif b == UInt8('-') || (UInt8('0') <= b <= UInt8('9'))
-        #TODO: have relaxed_number parsing keyword arg to
-        # allow leading '+', 'Inf', 'NaN', etc.?
+    elseif b == UInt8('-') || (UInt8('0') <= b <= UInt8('9')) || (opts.float64 && (b == UInt8('N') || b == UInt8('I') || b == UInt8('+')))
         return LazyValue(buf, pos, JSONTypes.NUMBER, opts)
     else
         error = InvalidJSON

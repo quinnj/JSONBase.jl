@@ -277,7 +277,7 @@ end
         y, pos = parsestring(x)
         return pos, _binary(y, tape, i, x)
     elseif gettype(x) == JSONTypes.NUMBER
-        # we're being tricksy hobits here
+        # we're being tricksy hobbits here
         # we make a Ref that we want to use to track the new i
         # once we've parsed the number, *BUT* we don't want to
         # actually allocate the Ref on the heap, so we use
@@ -558,8 +558,6 @@ end
     return PtrString(pointer(tape, pos), len, false), pos + len
 end
 
-_applyint(f::F, x::BinaryValue) where {F} = applyint(f, x)
-
 # reading an integer from binary format involves
 # inspecting the BinaryMeta byte to determine the
 # # of bytes the integer takes for encoding,
@@ -592,8 +590,6 @@ _applyint(f::F, x::BinaryValue) where {F} = applyint(f, x)
     end
     return pos + sz
 end
-
-_applyfloat(f::F, x::BinaryValue) where {F} = applyfloat(f, x)
 
 @inline function applyfloat(valfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
