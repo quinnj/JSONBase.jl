@@ -166,7 +166,7 @@ function Base.show(io::IO, x::LazyValue)
             show(io, MIME"text/plain"(), la)
         end
     elseif T == JSONTypes.STRING
-        str, _ = parsestring(x)
+        str, _ = applystring(nothing, x)
         print(io, "JSONBase.LazyValue(", repr(tostring(String, str)), ")")
     elseif T == JSONTypes.NULL
         print(io, "JSONBase.LazyValue(nothing)")
@@ -238,8 +238,8 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
         return Continue(pos + 1)
     end
     while true
-        # parsestring returns key as a PtrString
-        key, pos = parsestring(LazyValue(buf, pos, JSONTypes.STRING, getopts(x)))
+        # applystring returns key as a PtrString
+        key, pos = applystring(nothing, LazyValue(buf, pos, JSONTypes.STRING, getopts(x)))
         @nextbyte
         if b != UInt8(':')
             error = ExpectedColon
@@ -381,7 +381,7 @@ end
 # or not. It allows materialize, _binary, etc. to deal
 # with the string data appropriately without forcing a String allocation
 # PtrString should NEVER be visible to users though!
-@inline function parsestring(x::LazyValue)
+@inline function applystring(f::F, x::LazyValue) where {F}
     buf, pos = getbuf(x), getpos(x)
     len, b = getlength(buf), getbyte(buf, pos)
     if b != UInt8('"')
@@ -402,7 +402,13 @@ end
         end
         @nextbyte(false)
     end
-    return PtrString(pointer(buf, spos), pos - spos, escaped), pos + 1
+    str = PtrString(pointer(buf, spos), pos - spos, escaped)
+    if f === nothing
+        return str, pos + 1
+    else
+        f(str)
+        return pos + 1
+    end
 
 @label invalid
     invalid(error, buf, pos, "string")
@@ -452,7 +458,7 @@ end
     elseif T == JSONTypes.ARRAY
         return _applyarray(pass, x).pos
     elseif T == JSONTypes.STRING
-        _, pos = parsestring(x)
+        pos = applystring(pass, x)
         return pos
     elseif T == JSONTypes.NUMBER
         return _applynumber(pass, x)

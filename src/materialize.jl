@@ -242,7 +242,7 @@ end
             return pos
         end
     elseif type == JSONTypes.STRING
-        str, pos = parsestring(x)
+        str, pos = applystring(nothing, x)
         valfunc(tostring(T, str))
         return pos
     elseif x isa LazyValue && type == JSONTypes.NUMBER # only LazyValue

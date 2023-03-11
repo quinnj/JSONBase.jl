@@ -280,7 +280,7 @@ end
         # in applyarray, so no need to do anything further
         return pos, i
     elseif gettype(x) == JSONTypes.STRING
-        y, pos = parsestring(x)
+        y, pos = applystring(nothing, x)
         return pos, _binary(y, tape, i, x)
     elseif gettype(x) == JSONTypes.NUMBER
         # we're being tricksy hobbits here
@@ -516,7 +516,7 @@ end
     nfields = readnumber(tape, pos, Int32)
     pos += 4
     for _ = 1:nfields
-        key, pos = parsestring(BinaryValue(tape, pos, JSONTypes.STRING))
+        key, pos = applystring(nothing, BinaryValue(tape, pos, JSONTypes.STRING))
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(key, b)
         ret isa Continue || return ret
@@ -547,7 +547,7 @@ end
 # return a PtrString for an embedded string in binary format
 # we return a PtrString to allow callers flexibility
 # in how they want to materialize/compare/etc.
-@inline function parsestring(x::BinaryValue)
+@inline function applystring(f::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -561,7 +561,13 @@ end
         pos += 4
     end
     # hardcode `false` for `escaped` since we unescaped when writing to the tape
-    return PtrString(pointer(tape, pos), len, false), pos + len
+    str = PtrString(pointer(tape, pos), len, false)
+    if f === nothing
+        return str, pos + len
+    else
+        f(str)
+        return pos + len
+    end
 end
 
 # reading an integer from binary format involves

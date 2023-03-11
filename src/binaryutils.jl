@@ -134,7 +134,7 @@ function Base.show(io::IO, x::BinaryValue)
             show(io, MIME"text/plain"(), la)
         end
     elseif T == JSONTypes.STRING
-        str, _ = parsestring(x)
+        str, _ = applystring(nothing, x)
         print(io, "JSONBase.BinaryValue(", repr(tostring(String, str)), ")")
     elseif T == JSONTypes.NULL
         print(io, "JSONBase.BinaryValue(nothing)")
