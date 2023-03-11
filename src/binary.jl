@@ -10,10 +10,16 @@ This binary format can be particularly efficient as a materialization vs.
 a generic representation (e.g. `Dict`, `Array`, etc.) when the JSON
 has deeply nested structures.
 
-A `BinaryValue` is returned that supports the "selection" syntax,
+A [`BinaryValue`](@ref) is returned that supports the "selection" syntax,
 similar to LazyValue. The `BinaryValue` can also be materialized via:
   * `JSONBase.materialize(x)`: a generic Julia representation (Dict, Array, etc.)
   * `JSONBase.materialize(x, T)`: construct an instance of user-provided `T` from the `BinaryValue`
+
+Currently supported keyword arguments include:
+  * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float;
+    also allows parsing `NaN`, `Inf`, and `-Inf` since they are otherwise invalid JSON
+  * `jsonlines`: treat the `json` input as an implicit JSON array,
+    delimited by newlines, each element being parsed from each row/line in the input
 """
 function binary end
 

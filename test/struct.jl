@@ -297,5 +297,9 @@ end
     obj = JSONBase.materialize("""{\"ffffffff-ffff-ffff-ffff-ffffffffffff\": null,\"ffffffff-ffff-ffff-ffff-fffffffffffe\": null}""", Dict{UUID,Missing})
     @test obj[UUID(typemax(UInt128))] === missing
     @test obj[UUID(typemax(UInt128) - 0x01)] === missing
-
+    # materialize! with custom objecttype
+    obj = OrderedDict{String, Any}()
+    JSONBase.materialize!("""{"a": {"a": 1, "b": 2}, "b": {"a": 3, "b": 4}}""", obj; objecttype=OrderedDict{String, Any})
+    @test obj["a"] == OrderedDict("a" => 1, "b" => 2)
+    @test obj["b"] == OrderedDict("a" => 3, "b" => 4)
 end

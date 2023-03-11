@@ -22,14 +22,16 @@ When a type `T` is given for materialization, there are 3 construction "strategi
     values are matched on JSON object keys to field names; this corresponds to the "default" constructor
     structs have in Julia
 
-Supported keyword arguments include:
-  * `jsonlines`: 
-  * `float64`: 
-  * `objectype`: 
+Currently supported keyword arguments include:
+  * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float;
+    also allows parsing `NaN`, `Inf`, and `-Inf` since they are otherwise invalid JSON
+  * `jsonlines`: treat the `json` input as an implicit JSON array,
+    delimited by newlines, each element being parsed from each row/line in the input
+  * `objectype`: a custom `AbstractDict` type to use instead of `Dict{String, Any}` as the default
+    type for JSON object materialization
 """
 function materialize end
 
-#TODO: support dictlike w/ materialize!
 """
     JSONBase.materialize!(json, x)
 
@@ -376,7 +378,6 @@ end
 @inline (f::ApplyMutable{T})(i, k, v) where {T} = setproperty!(f.x, k, lift(T, k, v))
 @inline (f::MutableClosure{T, O})(key, val) where {T, O} = applyfield(T, O, key, val, ApplyMutable(f.x))
 
-#TODO: do we need any extra checks/validations/guards here?
 function materialize!(x::Union{LazyValue, BinaryValue}, ::Type{T}, objecttype::Type{O}=Dict{String, Any}) where {T, O}
     y = T()
     materialize!(x, y, O)
@@ -384,6 +385,11 @@ function materialize!(x::Union{LazyValue, BinaryValue}, ::Type{T}, objecttype::T
 end
 
 function materialize!(x::Union{LazyValue, BinaryValue}, y::T, objecttype::Type{O}=Dict{String, Any}) where {T, O}
-    c = MutableClosure{T, O}(y)
-    return applyobject(c, x).pos
+    if dictlike(T)
+        goc = GenericObjectClosure{T, O}(y)
+        return applyobject(goc, x).pos
+    else
+        mc = MutableClosure{T, O}(y)
+        return applyobject(mc, x).pos
+    end
 end

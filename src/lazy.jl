@@ -16,7 +16,8 @@ materialized via:
   * `JSONBase.materialize(x, T)`: construct an instance of user-provided `T` from JSON
 
 Currently supported keyword arguments include:
-  * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float
+  * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float;
+    also allows parsing `NaN`, `Inf`, and `-Inf` since they are otherwise invalid JSON
   * `jsonlines`: treat the `json` input as an implicit JSON array,
     delimited by newlines, each element being parsed from each row/line in the input
 
