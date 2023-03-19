@@ -8,7 +8,7 @@ $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 """))
 
 # like nonnothingtype + nonmissingtype together
-non_nothing_missing_type(::Type{T}) where {T} = Base.typesplit(Base.typesplit(T, Nothing), Missing)
+non_nothing_missing_type(@nospecialize T) = Base.typesplit(Base.typesplit(T, Nothing), Missing)
 
 # helper struct we pack lazy-specific keyword args into
 # held by LazyValue for access
