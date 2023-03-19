@@ -122,7 +122,7 @@ end
     ["Gilbert", "2013", 24, true]
     ["Alexa", "2013", 29, true]
     ["May", "2012B", 14, false]
-    ["Deloise", "2012A", 19, true] 
+    ["Deloise", "2012A", 19, true]
     """; jsonlines=true, float64=true) ==
     [["Name", "Session", "Score", "Completed"],
      ["Gilbert", "2013", 24.0, true],
@@ -368,3 +368,6 @@ end
 include("struct.jl")
 include("json.jl")
 include("numbers.jl")
+@static if VERSION ≥ v"1.8"
+    @testset "Optimization test with JET" include("optimization.jl")
+end

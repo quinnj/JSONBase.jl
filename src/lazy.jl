@@ -242,7 +242,7 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(key, val)
-        # if ret is not an Continue, then we're 
+        # if ret is not an Continue, then we're
         # short-circuiting parsing via e.g. selection syntax
         # so return immediately
         ret isa Continue || return ret
