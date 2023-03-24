@@ -170,36 +170,45 @@ end
 @inline function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, objecttype::Type{O}=Dict{String, Any}) where {F, T, O}
     type = gettype(x)
     if type == JSONTypes.OBJECT
-        if T === Any
+        #TODO: if T is a Union, then the below only really works
+        # for Nothing/Missing (obviously)
+        # to support a field like ::Union{StructA, StructB}
+        # we could define an interface function like
+        # JSONBase.choosetype(::Union, x) -> T
+        # so users could overload for the union type w/ their type
+        # and, given the LazyValue/BinaryValue, choose which member
+        # of the union should be materialized (by returning it from choosetype)
+        S = non_nothing_missing_type(T)
+        if S === Any
             d = O()
             pos = applyobject(GenericObjectClosure{O, O}(d), x).pos
             valfunc(d)
             return pos
-        elseif dictlike(T)
-            d = T()
-            pos = applyobject(GenericObjectClosure{T, O}(d), x).pos
+        elseif dictlike(S)
+            d = S()
+            pos = applyobject(GenericObjectClosure{S, O}(d), x).pos
             valfunc(d)
             return pos
-        elseif mutable(T)
-                y = T()
+        elseif mutable(S)
+                y = S()
                 pos = materialize!(x, y, O)
                 valfunc(y)
                 return pos
-        elseif kwdef(T)
+        elseif kwdef(S)
             kws = Pair{Symbol, Any}[]
-            c = KwClosure{T, O}(kws)
+            c = KwClosure{S, O}(kws)
             pos = applyobject(c, x).pos
-            y = T(; kws...)
+            y = S(; kws...)
             valfunc(y)
             return pos
         else
             # struct fallback
-            N = fieldcount(T)
+            N = fieldcount(S)
             vec = Vector{Any}(undef, N)
-            sc = StructClosure{T, O}(vec)
+            sc = StructClosure{S, O}(vec)
             pos = applyobject(sc, x).pos
-            constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
-            construct(T, constructor, vec, valfunc)
+            constructor = S <: NamedTuple ? ((x...) -> S(tuple(x...))) : S
+            construct(S, constructor, vec, valfunc)
             return pos
         end
     elseif type == JSONTypes.ARRAY

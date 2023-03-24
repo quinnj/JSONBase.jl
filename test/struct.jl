@@ -177,6 +177,16 @@ function JSONBase.lift(::Type{ThreeDates}, key::Symbol, val)
     return val
 end
 
+struct M
+    id::Int
+    value::Union{Nothing,K}
+end
+
+struct Recurs
+    id::Int
+    value::Union{Nothing,Recurs}
+end
+
 @testset "JSONBase.materialize" begin
     obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
@@ -302,4 +312,8 @@ end
     JSONBase.materialize!("""{"a": {"a": 1, "b": 2}, "b": {"a": 3, "b": 4}}""", obj; objecttype=OrderedDict{String, Any})
     @test obj["a"] == OrderedDict("a" => 1, "b" => 2)
     @test obj["b"] == OrderedDict("a" => 3, "b" => 4)
+    # nested union struct field
+    @test JSONBase.materialize("""{"id": 1, "value": {"id": 1, "value": null}}""", M) == M(1, K(1, missing))
+    # recusrive field materialization
+    JSONBase.materialize("""{ "id": 1, "value": { "id": 2 } }""", Recurs)
 end
