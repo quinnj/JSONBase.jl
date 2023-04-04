@@ -1,4 +1,4 @@
-using BenchmarkTools, JSONBase, JSON, JSON3
+using JET, JSONBase, BenchmarkTools, Cthulhu, Profile, PProf, JSON, JSON3, Test, UUIDs, Dates, OrderedCollections
 
 json = """
 {
