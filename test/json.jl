@@ -1,4 +1,4 @@
-using JSONBase, Test
+using JSONBase, Test, Logging
 
 mutable struct CircularRef
     id::Int
@@ -115,4 +115,18 @@ JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
     @test JSONBase.json((a=[1 2; 3 4],)) == "{\"a\":[[1,3],[2,4]]}"
     # singleton writing
     @test JSONBase.json(C()) == "\"C()\""
+    # module writing
+    @test JSONBase.json(JSONBase) == "\"JSONBase\""
+    # function writing
+    @test JSONBase.json(JSONBase.json) == "\"json\""
+    # SimpleVector writing
+    @test JSONBase.json(Core.svec(1, 2, 3)) == "[1,2,3]"
+    # Ptr writing
+    @test JSONBase.json(C_NULL) == "\"Ptr{Nothing} @0x0000000000000000\""
+    # DataType writing
+    @test JSONBase.json(Float64) == "\"Float64\""
+    @test JSONBase.json(Union{Missing, Float64}) == "\"Union{Missing, Float64}\""
+    # LogLevel writing
+    @test JSONBase.json(Logging.Info) == "\"Info\""
+    @test JSONBase.json(Logging.LogLevel(1)) == "\"LogLevel(1)\""
 end

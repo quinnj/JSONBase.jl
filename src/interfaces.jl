@@ -1,6 +1,6 @@
 module API
 
-using Dates, UUIDs
+using Dates, UUIDs, Logging
 
 export applyeach, Continue, fields, mutable, kwdef,
        dictlike, addkeyval!, _keytype, _valtype,
@@ -194,7 +194,7 @@ lower(::Type{T}, key, val) where {T} = lower(val)
 # some default lowerings for common types
 lower(::Missing) = nothing
 lower(x::Symbol) = String(x)
-lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)
+lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType, Type, Logging.LogLevel}) = string(x)
 lower(x::Regex) = x.pattern
 lower(x::Matrix) = eachcol(x)
 
@@ -271,7 +271,7 @@ JSONBase.arraylike(::MyType) = true
 function arraylike end
 
 arraylike(_) = false
-arraylike(::Union{AbstractArray, AbstractSet, Tuple, Base.Generator}) = true
+arraylike(::Union{AbstractArray, AbstractSet, Tuple, Base.Generator, Core.SimpleVector}) = true
 
 @inline function applyeach(f, x::AbstractArray)
     for i in eachindex(x)
@@ -287,7 +287,7 @@ end
 
 # appropriate definition for iterables that
 # can't have #undef values
-@inline function applyeach(f, x::Union{AbstractSet, Base.Generator})
+@inline function applyeach(f, x::Union{AbstractSet, Base.Generator, Core.SimpleVector})
     for (i, v) in enumerate(x)
         ret = f(i, v)
         ret isa Continue || return ret
