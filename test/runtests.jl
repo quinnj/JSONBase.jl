@@ -80,8 +80,9 @@ struct File end
     @test JSONBase.materialize("1", float64=true) === 1.0
     @test JSONBase.materialize("[1, 2, 3.14, 10]", float64=true) == [1.0, 2.0, 3.14, 10.0]
     @test JSONBase.materialize("{\"a\": 1, \"b\": 2.0, \"c\": 3.14, \"d\": 10}", float64=true) == Dict("a" => 1.0, "b" => 2.0, "c" => 3.14, "d" => 10.0)
-    @test JSONBase.materialize("NaN"; float64=true) === NaN
-    @test JSONBase.materialize("Inf"; float64=true) === Inf
+    # allownan is just an alias for float64=true
+    @test JSONBase.materialize("NaN"; allownan=true) === NaN
+    @test JSONBase.materialize("Inf"; allownan=true) === Inf
     @test JSONBase.materialize("-Inf"; float64=true) === -Inf
     @test JSONBase.materialize("+1.0"; float64=true) === 1.0
     # JSONBase.Options
