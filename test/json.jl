@@ -38,9 +38,9 @@ JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
     @test_throws ArgumentError JSONBase.json(NaN)
     @test_throws ArgumentError JSONBase.json(Inf)
     @test_throws ArgumentError JSONBase.json(-Inf)
-    @test JSONBase.json(NaN; allow_inf=true) == "NaN"
-    @test JSONBase.json(Inf; allow_inf=true) == "Infinity"
-    @test JSONBase.json(-Inf; allow_inf=true) == "-Infinity"
+    @test JSONBase.json(NaN; allownan=true) == "NaN"
+    @test JSONBase.json(Inf; allownan=true) == "Infinity"
+    @test JSONBase.json(-Inf; allownan=true) == "-Infinity"
     # test the JSON output of a bunch of strings
     @test JSONBase.json("") == "\"\""
     @test JSONBase.json("a") == "\"a\""
