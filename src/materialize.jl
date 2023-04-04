@@ -46,10 +46,10 @@ materialize!(io::Union{IO, Base.AbstractCmd}, x; kw...) = materialize!(Base.read
 materialize(io::IOStream, ::Type{T}=Any; kw...) where {T} = materialize(Mmap.mmap(io), T; kw...)
 materialize!(io::IOStream, x; kw...) = materialize!(Mmap.mmap(io), x; kw...)
 
-materialize(buf::Union{AbstractVector{UInt8}, AbstractString}, ::Type{T}=Any; objecttype::Type{O}=Dict{String, Any}, kw...) where {T, O} =
-    materialize(lazy(buf; kw...), T; objecttype)
-materialize!(buf::Union{AbstractVector{UInt8}, AbstractString}, x; objecttype::Type{O}=Dict{String, Any}, kw...) where {O} =
-    materialize!(lazy(buf; kw...), x, objecttype)
+materialize(buf::Union{AbstractVector{UInt8}, AbstractString}, ::Type{T}=Any; dicttype::Type{O}=Dict{String, Any}, kw...) where {T, O} =
+    materialize(lazy(buf; kw...), T; dicttype)
+materialize!(buf::Union{AbstractVector{UInt8}, AbstractString}, x; dicttype::Type{O}=Dict{String, Any}, kw...) where {O} =
+    materialize!(lazy(buf; kw...), x, dicttype)
 
 mutable struct ConvertClosure{T}
     x::T
@@ -58,7 +58,7 @@ end
 
 @inline (f::ConvertClosure{T})(x) where {T} = setfield!(f, :x, lift(T, x))
 
-@inline function materialize(x::LazyValue, ::Type{T}=Any; objecttype::Type{O}=Dict{String, Any}) where {T, O}
+@inline function materialize(x::LazyValue, ::Type{T}=Any; dicttype::Type{O}=Dict{String, Any}) where {T, O}
     y = ConvertClosure{T}()
     pos = materialize(y, x, T, O)
     checkendpos(x, pos, T)
@@ -87,7 +87,7 @@ function _checkendpos(x::LazyValue, pos, ::Type{T}) where {T}
     return nothing
 end
 
-function materialize(x::BinaryValue, ::Type{T}=Any; objecttype::Type{O}=Dict{String, Any}) where {T, O}
+function materialize(x::BinaryValue, ::Type{T}=Any; dicttype::Type{O}=Dict{String, Any}) where {T, O}
     y = ConvertClosure{T}()
     materialize(y, x, T, O)
     return y.x
@@ -160,14 +160,14 @@ end
 initarray(::Type{A}) where {A <: AbstractSet} = A()
 initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
 
-function _materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, objecttype::Type{O}=Dict{String, Any}) where {F, T, O}
+function _materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, dicttype::Type{O}=Dict{String, Any}) where {F, T, O}
     return materialize(valfunc, x, T, O)
 end
 
 # Note: when calling this method manually, we don't do the checkendpos check
 # which means if the input JSON has invalid trailing characters, no error will be thrown
 # we also don't do the lift of whatever is materialized to T (we're assuming that is done in valfunc)
-@inline function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, objecttype::Type{O}=Dict{String, Any}) where {F, T, O}
+@inline function materialize(valfunc::F, x::Union{LazyValue, BinaryValue}, ::Type{T}=Any, dicttype::Type{O}=Dict{String, Any}) where {F, T, O}
     type = gettype(x)
     if type == JSONTypes.OBJECT
         #TODO: if T is a Union, then the below only really works
@@ -292,7 +292,7 @@ end
 # with field names in `T` and when a match is found, determines how
 # to materialize `val` (via recursively calling materialize)
 # passing `valfunc` along to be applied to the final materialized value
-@generated function applyfield(::Type{T}, objecttype::Type{O}, key, val, valfunc::F) where {T, O, F}
+@generated function applyfield(::Type{T}, dicttype::Type{O}, key, val, valfunc::F) where {T, O, F}
     N = fieldcount(T)
     ex = quote
         Base.@_inline_meta
@@ -387,13 +387,13 @@ end
 @inline (f::ApplyMutable{T})(i, k, v) where {T} = setproperty!(f.x, k, lift(T, k, v))
 @inline (f::MutableClosure{T, O})(key, val) where {T, O} = applyfield(T, O, key, val, ApplyMutable(f.x))
 
-function materialize!(x::Union{LazyValue, BinaryValue}, ::Type{T}, objecttype::Type{O}=Dict{String, Any}) where {T, O}
+function materialize!(x::Union{LazyValue, BinaryValue}, ::Type{T}, dicttype::Type{O}=Dict{String, Any}) where {T, O}
     y = T()
     materialize!(x, y, O)
     return y
 end
 
-function materialize!(x::Union{LazyValue, BinaryValue}, y::T, objecttype::Type{O}=Dict{String, Any}) where {T, O}
+function materialize!(x::Union{LazyValue, BinaryValue}, y::T, dicttype::Type{O}=Dict{String, Any}) where {T, O}
     if dictlike(T)
         goc = GenericObjectClosure{T, O}(y)
         return applyobject(goc, x).pos
