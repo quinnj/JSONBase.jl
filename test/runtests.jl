@@ -126,11 +126,11 @@ struct File end
 end
 
 @testset "Non-default object types: `JSONBase.$f`" for f in (JSONBase.lazy, JSONBase.binary)
-    # test objecttype keyword arg
-    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=Dict{String, Int}) isa Dict{String, Int}
-    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=Vector{Pair{String, Int}}) isa Vector{Pair{String, Int}}
-    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=OrderedDict{String, Int}) isa OrderedDict{String, Int}
-    x = JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); objecttype=OrderedDict{Symbol, Int})
+    # test dicttype keyword arg
+    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); dicttype=Dict{String, Int}) isa Dict{String, Int}
+    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); dicttype=Vector{Pair{String, Int}}) isa Vector{Pair{String, Int}}
+    @test JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); dicttype=OrderedDict{String, Int}) isa OrderedDict{String, Int}
+    x = JSONBase.materialize(f("{\"a\": 1, \"b\": 2, \"c\": 3}"); dicttype=OrderedDict{Symbol, Int})
     @test x[:a] == 1 && x[:b] == 2 && x[:c] == 3
 end
 
