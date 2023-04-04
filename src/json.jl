@@ -10,7 +10,7 @@ sizeguess(_) = 512
     JSONBase.json(x) -> String
     JSONBase.json(io, x)
     JSONBase.json(file_name, x)
-    JSONBase.json!(buf, pos, x[, allow_inf]) -> pos
+    JSONBase.json!(buf, pos, x[, allownan]) -> pos
 
 Serialize `x` to JSON format. The 1st method takes just the object and returns a `String`.
 In the 2nd method, `io` is an `IO` object, and the JSON output will be written to it.
@@ -18,11 +18,11 @@ For the 3rd method, `file_name` is a `String`, a file will be opened and the JSO
 For the 4th method, a `buf` as a `Vector{UInt8}` is provided, along with an integer `pos` for the position where
 JSON output should start to be written. If the `buf` isn't large enough, it will be `resize!`ed to be large enough.
 
-All methods except the 4th accept `allow_inf::Bool=false` as a keyword argument.
-The 4th method optionally accepts `allow_inf` as a 4th positional argument.
-If `allow_inf` is `true`, allow `Inf`, `-Inf`, and `NaN` in the output.
-If `allow_inf` is `false`, throw an error if `Inf`, `-Inf`, or `NaN` is encountered.
-`allow_inf` is `false` by default.
+All methods except the 4th accept `allownan::Bool=false` as a keyword argument.
+The 4th method optionally accepts `allownan` as a 4th positional argument.
+If `allownan` is `true`, allow `Inf`, `-Inf`, and `NaN` in the output.
+If `allownan` is `false`, throw an error if `Inf`, `-Inf`, or `NaN` is encountered.
+`allownan` is `false` by default.
 
 By default, `x` must be a JSON-serializable object. Supported types include:
   * `AbstractString` => JSON string: types must support the `AbstractString` interface, specifically with support for
@@ -59,17 +59,17 @@ and isn't conducive to recursive situations. Types should define an appropriate
 """
 function json end
 
-function json(io::IO, x::T; allow_inf::Bool=false) where {T}
+function json(io::IO, x::T; allownan::Bool=false) where {T}
     y = lower(x)
     buf = Vector{UInt8}(undef, sizeguess(y))
-    pos = json!(buf, 1, y, allow_inf, nothing)
+    pos = json!(buf, 1, y, allownan, nothing)
     return write(io, resize!(buf, pos - 1))
 end
 
-function json(x::T; allow_inf::Bool=false) where {T}
+function json(x::T; allownan::Bool=false) where {T}
     y = lower(x)
     buf = Base.StringVector(sizeguess(y))
-    pos = json!(buf, 1, y, allow_inf, nothing)
+    pos = json!(buf, 1, y, allownan, nothing)
     return String(resize!(buf, pos - 1))
 end
 
@@ -96,7 +96,7 @@ end
 struct WriteClosure{arraylike, T} # T is the type of the parent object/array being written
     buf::Vector{UInt8}
     pos::Ptr{Int}
-    allow_inf::Bool
+    allownan::Bool
     objids::Base.IdSet{Any} # to track circular references
 end
 
@@ -135,7 +135,7 @@ end
         # if so, it's a circular reference! so we just write `null`
         pos = _null(buf, pos)
     else
-        pos = json!(buf, pos, lowered, f.allow_inf, f.objids)
+        pos = json!(buf, pos, lowered, f.allownan, f.objids)
     end
     @checkn 1
     buf[pos] = UInt8(',')
@@ -146,7 +146,7 @@ end
 end
 
 # assume x is lowered value
-function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing)
+function json!(buf, pos, x, allownan=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing)
     # string
     if x isa AbstractString
         return _string(buf, pos, x)
@@ -170,7 +170,7 @@ function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{A
         end
     # number
     elseif x isa Number
-        return _number(buf, pos, x, allow_inf)
+        return _number(buf, pos, x, allownan)
     # null
     elseif x === nothing
         return _null(buf, pos)
@@ -198,7 +198,7 @@ function json!(buf, pos, x, allow_inf=false, objids::Union{Nothing, Base.IdSet{A
         # use an IdSet to keep track of circular references
         objids = objids === nothing ? Base.IdSet{Any}() : objids
         push!(objids, x)
-        c = WriteClosure{al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), allow_inf, objids)
+        c = WriteClosure{al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), allownan, objids)
         GC.@preserve ref API.applyeach(c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
@@ -294,11 +294,11 @@ end
 _split_sign(x) = Base.split_sign(x)
 _split_sign(x::BigInt) = (abs(x), x < 0)
 
-@noinline infcheck(x, allow_inf) = isfinite(x) || allow_inf || throw(ArgumentError("$x not allowed to be written in JSON spec; pass `allow_inf=true` to allow anyway"))
+@noinline infcheck(x, allownan) = isfinite(x) || allownan || throw(ArgumentError("$x not allowed to be written in JSON spec; pass `allownan=true` to allow anyway"))
 
-_number(buf, pos, x, allow_inf) = _number(buf, pos, convert(Float64, x), allow_inf)
+_number(buf, pos, x, allownan) = _number(buf, pos, convert(Float64, x), allownan)
 
-@inline function _number(buf, pos, x::Union{Integer, AbstractFloat}, allow_inf)
+@inline function _number(buf, pos, x::Union{Integer, AbstractFloat}, allownan)
     if x isa Integer
         y, neg = _split_sign(x)
         n = i = ndigits(y, base=10, pad=1)
@@ -314,7 +314,7 @@ _number(buf, pos, x, allow_inf) = _number(buf, pos, convert(Float64, x), allow_i
         end
         return pos + n
     elseif x isa AbstractFloat
-        infcheck(x, allow_inf)
+        infcheck(x, allownan)
         if x isa Base.IEEEFloat
             if isinf(x)
                 # Although this is non-standard JSON, "Infinity" is commonly used.
