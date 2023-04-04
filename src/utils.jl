@@ -12,10 +12,12 @@ non_nothing_missing_type(::Type{T}) where {T} = Base.typesplit(Base.typesplit(T,
 
 # helper struct we pack lazy-specific keyword args into
 # held by LazyValue for access
-Base.@kwdef struct Options
-    float64::Bool = false
-    jsonlines::Bool = false
+struct Options
+    float64::Bool
+    jsonlines::Bool
 end
+
+Options(; allownan::Bool=false, float64::Bool=allownan, jsonlines::Bool=false) = Options(float64, jsonlines)
 
 withopts(opts; kw...) = Options(;
     float64 = opts.float64,
