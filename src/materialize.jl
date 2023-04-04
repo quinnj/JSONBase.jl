@@ -295,9 +295,8 @@ end
 @generated function applyfield(::Type{T}, objecttype::Type{O}, key, val, valfunc::F) where {T, O, F}
     N = fieldcount(T)
     ex = quote
-        # if no fields matched this json key, then we return Continue()
-        # here to signal that the value should be skipped
-        return Continue()
+        Base.@_inline_meta
+        fds = fields($T)
     end
     for i = 1:N
         fname = fieldname(T, i)
@@ -305,7 +304,7 @@ end
         # performance note: this is the main reason this is a generated function and not
         # a macro unrolling fields: we want the field name as a String w/o paying a runtime cost
         str = String(fname)
-        pushfirst!(ex.args, quote
+        push!(ex.args, quote
             field = get(fds, $(Meta.quot(fname)), nothing)
             str = field !== nothing && haskey(field, :jsonkey) ? field.jsonkey : $str
             if Selectors.eq(key, str)
@@ -315,8 +314,9 @@ end
             end
         end)
     end
-    pushfirst!(ex.args, :(fds = fields($T)))
-    pushfirst!(ex.args, :(Base.@_inline_meta))
+    # if no fields matched this json key, then we return Continue()
+    # here to signal that the value should be skipped
+    push!(ex.args, :(return Continue()))
     # str = sprint(show, ex)
     # println(str)
     return ex
