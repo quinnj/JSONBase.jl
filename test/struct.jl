@@ -316,4 +316,39 @@ end
     @test JSONBase.materialize("""{"id": 1, "value": {"id": 1, "value": null}}""", M) == M(1, K(1, missing))
     # recusrive field materialization
     JSONBase.materialize("""{ "id": 1, "value": { "id": 2 } }""", Recurs)
+    # multidimensional arrays
+    # "[[1.0],[2.0]]" => (1, 2)
+    m = Matrix{Float64}(undef, 1, 2)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.materialize("[[1.0],[2.0]]", Matrix{Float64}) == m
+    # "[[1.0,2.0]]" => (2, 1)
+    m = Matrix{Float64}(undef, 2, 1)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.materialize("[[1.0,2.0]]", Matrix{Float64}) == m
+    # "[[[1.0]],[[2.0]]]" => (1, 1, 2)
+    m = Array{Float64}(undef, 1, 1, 2)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.materialize("[[[1.0]],[[2.0]]]", Array{Float64, 3}) == m
+    # "[[[1.0],[2.0]]]" => (1, 2, 1)
+    m = Array{Float64}(undef, 1, 2, 1)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.materialize("[[[1.0],[2.0]]]", Array{Float64, 3}) == m
+    # "[[[1.0,2.0]]]" => (2, 1, 1)
+    m = Array{Float64}(undef, 2, 1, 1)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.materialize("[[[1.0,2.0]]]", Array{Float64, 3}) == m
+
+    m = Array{Float64}(undef, 1, 2, 3)
+    m[1] = 1
+    m[2] = 2
+    m[3] = 3
+    m[4] = 4
+    m[5] = 5
+    m[6] = 6
+    @test JSONBase.materialize("[[[1.0],[2.0]],[[3.0],[4.0]],[[5.0],[6.0]]]", Array{Float64, 3}) == m
 end

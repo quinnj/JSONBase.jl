@@ -54,6 +54,9 @@ API.arraylike(x::Values) = gettype(x) == JSONTypes.ARRAY
 Selectors.@selectors LazyValue
 Selectors.@selectors BinaryValue
 
+# convenience alias for pre-1.0 JSON compat
+parsefile(file, args...; kw...) = materialize(open(file), args...; kw...)
+
 end # module
 
 #TODO

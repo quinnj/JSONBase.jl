@@ -18,7 +18,7 @@ Specifically, the following default materializations are used for untyped materi
 When a type `T` is given for materialization, there are 3 construction "strategies" available:
   * `JSONBase.mutable(T)`: an instance is constructed via `T()`, then fields are set via `setproperty!(obj, field, value)`
   * `JSONBase.kwdef(T)`: an instance is constructed via `T(; field=value...)`, i.e. passed as keyword argumnents to the type constructor
-  * Default: an instance is constructed by passing `T(val1, val2, ...)` to the type constructor
+  * Default: an instance is constructed by passing `T(val1, val2, ...)` to the type constructor;
     values are matched on JSON object keys to field names; this corresponds to the "default" constructor
     structs have in Julia
 
@@ -27,7 +27,7 @@ Currently supported keyword arguments include:
     also allows parsing `NaN`, `Inf`, and `-Inf` since they are otherwise invalid JSON
   * `jsonlines`: treat the `json` input as an implicit JSON array,
     delimited by newlines, each element being parsed from each row/line in the input
-  * `objectype`: a custom `AbstractDict` type to use instead of `Dict{String, Any}` as the default
+  * `dicttype`: a custom `AbstractDict` type to use instead of `Dict{String, Any}` as the default
     type for JSON object materialization
 """
 function materialize end

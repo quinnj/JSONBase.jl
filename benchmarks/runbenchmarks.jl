@@ -98,3 +98,31 @@ JSONBase.mutable(::Type{B}) = true
   # 83.592 ns (4 allocations: 192 bytes)
 "null"
 
+
+using JSON, JSON3, JSONBase, BenchmarkTools
+const json="{\"topic\":\"trade.BTCUSDT\",\"data\":[{\"symbol\":\"BTCUSDT\",\"tick_direction\":\"PlusTick\",\"price\":\"19431.00\",\"size\":0.2,\"timestamp\":\"2022-10-18T14:50:20.000Z\",\"trade_time_ms\":\"1666104620275\",\"side\":\"Buy\",\"trade_id\":\"e6be9409-2886-5eb6-bec9-de01e1ec6bf6\",\"is_block_trade\":\"false\"},{\"symbol\":\"BTCUSDT\",\"tick_direction\":\"MinusTick\",\"price\":\"19430.50\",\"size\":1.989,\"timestamp\":\"2022-10-18T14:50:20.000Z\",\"trade_time_ms\":\"1666104620299\",\"side\":\"Sell\",\"trade_id\":\"bb706542-5d3b-5e34-8767-c05ab4df7556\",\"is_block_trade\":\"false\"},{\"symbol\":\"BTCUSDT\",\"tick_direction\":\"ZeroMinusTick\",\"price\":\"19430.50\",\"size\":0.007,\"timestamp\":\"2022-10-18T14:50:20.000Z\",\"trade_time_ms\":\"1666104620314\",\"side\":\"Sell\",\"trade_id\":\"a143da10-3409-5383-b557-b93ceeba4ca8\",\"is_block_trade\":\"false\"},{\"symbol\":\"BTCUSDT\",\"tick_direction\":\"PlusTick\",\"price\":\"19431.00\",\"size\":0.001,\"timestamp\":\"2022-10-18T14:50:20.000Z\",\"trade_time_ms\":\"1666104620327\",\"side\":\"Buy\",\"trade_id\":\"7bae9053-e42b-52bd-92c5-6be8a4283525\",\"is_block_trade\":\"false\"}]}"
+
+#Data structure for the JSON file to parse into
+struct Ticket
+  symbol::String
+  tick_direction::String
+  price::String
+  size::Float64
+  timestamp::String
+  trade_time_ms::String
+  side::String
+  trade_id::String
+  is_block_trade::String
+end
+
+struct Tape
+  topic::String
+  data::Vector{Ticket}
+end
+
+@btime JSON.parse($json)
+@btime JSON3.read($json)
+@btime JSON3.read($json, Tape)
+@btime JSONBase.materialize($json)
+@btime JSONBase.binary($json)
+@btime JSONBase.materialize($json, Tape)
