@@ -18,7 +18,7 @@ Specifically, the following default materializations are used for untyped materi
 When a type `T` is given for materialization, there are 3 construction "strategies" available:
   * `JSONBase.mutable(T)`: an instance is constructed via `T()`, then fields are set via `setproperty!(obj, field, value)`
   * `JSONBase.kwdef(T)`: an instance is constructed via `T(; field=value...)`, i.e. passed as keyword argumnents to the type constructor
-  * Default: an instance is constructed by passing `T(val1, val2, ...)` to the type constructor
+  * Default: an instance is constructed by passing `T(val1, val2, ...)` to the type constructor;
     values are matched on JSON object keys to field names; this corresponds to the "default" constructor
     structs have in Julia
 
@@ -27,7 +27,7 @@ Currently supported keyword arguments include:
     also allows parsing `NaN`, `Inf`, and `-Inf` since they are otherwise invalid JSON
   * `jsonlines`: treat the `json` input as an implicit JSON array,
     delimited by newlines, each element being parsed from each row/line in the input
-  * `objectype`: a custom `AbstractDict` type to use instead of `Dict{String, Any}` as the default
+  * `dicttype`: a custom `AbstractDict` type to use instead of `Dict{String, Any}` as the default
     type for JSON object materialization
 """
 function materialize end
@@ -129,6 +129,29 @@ end
     return Continue(pos)
 end
 
+# recursively build up multidimensional array dimensions
+# "[[1.0],[2.0]]" => (1, 2)
+# "[[1.0,2.0]]" => (2, 1)
+# "[[[1.0]],[[2.0]]]" => (1, 1, 2)
+# "[[[1.0],[2.0]]]" => (1, 2, 1)
+# "[[[1.0,2.0]]]" => (2, 1, 1)
+# length of innermost array is 1st dim
+function discover_dims(x)
+    @assert gettype(x) == JSONTypes.ARRAY
+    ref = Ref(0)
+    alc = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
+    GC.@preserve ref applyarray(alc, x)
+    len = unsafe_load(alc.len)
+    ret = applyarray(x) do i, v
+        if gettype(v) == JSONTypes.ARRAY
+            return discover_dims(v)
+        else
+            return ()
+        end
+    end
+    return (ret..., len)
+end
+
 struct ArrayLengthClosure
     len::Ptr{Int}
 end
@@ -138,24 +161,31 @@ end
     return Continue()
 end
 
-struct MatrixClosure{A, T}
-    mat::A
-    col::Int
+struct MultiDimClosure{A, T}
+    arr::A
+    dims::Vector{Int}
+    cur_dim::Base.RefValue{Int}
 end
 
-struct MatrixValFunc{A}
-    mat::A
-    col::Int
-    row::Int
-end
-
-@inline (f::MatrixValFunc{A})(x) where {A} = setindex!(f.mat, lift(eltype(f.mat), x), f.row, f.col)
-
-@inline function (f::MatrixClosure{A, T})(i, val) where {A, T}
-    # i is our row index
-    pos = _materialize(MatrixValFunc(f.mat, f.col, i), val, eltype(f.mat), T)
+@inline function (f::MultiDimClosure{A, T})(i, val) where {A, T}
+    f.dims[f.cur_dim[]] = i
+    if gettype(val) == JSONTypes.ARRAY
+        f.cur_dim[] -= 1
+        pos = applyarray(f, val)
+        f.cur_dim[] += 1
+        return pos
+    else
+        pos = _materialize(MultiDimValFunc(f.arr, f.dims), val, eltype(f.arr), T)
+    end
     return Continue(pos)
 end
+
+struct MultiDimValFunc{A}
+    arr::A
+    dims::Vector{Int}
+end
+
+@inline (f::MultiDimValFunc{A})(x) where {A} = setindex!(f.arr, lift(eltype(f.arr), x), f.dims...)
 
 initarray(::Type{A}) where {A <: AbstractSet} = A()
 initarray(::Type{A}) where {A <: AbstractVector} = A(undef, 0)
@@ -218,30 +248,14 @@ end
             pos = applyarray(GenericArrayClosure{A, O}(a), x).pos
             valfunc(a)
             return pos
-        elseif T <: Matrix
-            #TODO: factor this out into a separate method
-            # special-case Matrix
-            # must be an array of arrays, where each array element is the same length
-            # we need to peek ahead to figure out the size
-            sz = applyarray(x) do i, v
-                # v is the 1st column of our matrix
-                # but we really just want to know the length
-                gettype(v) == JSONTypes.ARRAY || throw(ArgumentError("expected array of arrays for materializing"))
-                ref = Ref(0)
-                alc = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
-                GC.@preserve ref applyarray(alc, v)
-                # by returning the len here, we're short-circuiting the initial
-                # applyarray call
-                return unsafe_load(alc.len)
-            end
-            m = T(undef, (sz, sz))
+        elseif T <: AbstractArray && ndims(T) > 1
+            # special-case multidimensional arrays
+            # first we discover the final dimensions
+            dims = discover_dims(x)
+            m = T(undef, dims)
+            n = ndims(m)
             # now we do the actual parsing to fill in our matrix
-            cont = applyarray(x) do i, v
-                # i is the column index of our matrix
-                # v is the 1st column of our matrix
-                mc = MatrixClosure{T, O}(m, i)
-                return applyarray(mc, v)
-            end
+            cont = applyarray(MultiDimClosure{typeof(m), T}(m, ones(n), Ref(n)), x)
             valfunc(m)
             return cont.pos
         else

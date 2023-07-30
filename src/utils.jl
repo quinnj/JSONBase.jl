@@ -17,6 +17,7 @@ struct Options
     jsonlines::Bool
 end
 
+# `allownan` allowed for pre-1.0 JSON compat (just sets float64 value here)
 Options(; allownan::Bool=false, float64::Bool=allownan, jsonlines::Bool=false) = Options(float64, jsonlines)
 
 withopts(opts; kw...) = Options(;

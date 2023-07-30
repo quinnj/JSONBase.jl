@@ -129,4 +129,39 @@ JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
     # LogLevel writing
     @test JSONBase.json(Logging.Info) == "\"Info\""
     @test JSONBase.json(Logging.LogLevel(1)) == "\"LogLevel(1)\""
+    # multidimensional arrays
+    # "[[1.0],[2.0]]" => (1, 2)
+    m = Matrix{Float64}(undef, 1, 2)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.json(m) == "[[1.0],[2.0]]"
+    # "[[1.0,2.0]]" => (2, 1)
+    m = Matrix{Float64}(undef, 2, 1)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.json(m) == "[[1.0,2.0]]"
+    # "[[[1.0]],[[2.0]]]" => (1, 1, 2)
+    m = Array{Float64}(undef, 1, 1, 2)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.json(m) == "[[[1.0]],[[2.0]]]"
+    # "[[[1.0],[2.0]]]" => (1, 2, 1)
+    m = Array{Float64}(undef, 1, 2, 1)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.json(m) == "[[[1.0],[2.0]]]"
+    # "[[[1.0,2.0]]]" => (2, 1, 1)
+    m = Array{Float64}(undef, 2, 1, 1)
+    m[1] = 1
+    m[2] = 2
+    @test JSONBase.json(m) == "[[[1.0,2.0]]]"
+
+    m = Array{Float64}(undef, 1, 2, 3)
+    m[1] = 1
+    m[2] = 2
+    m[3] = 3
+    m[4] = 4
+    m[5] = 5
+    m[6] = 6
+    @test JSONBase.json(m) == "[[[1.0],[2.0]],[[3.0],[4.0]],[[5.0],[6.0]]]"
 end

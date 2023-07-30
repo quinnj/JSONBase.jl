@@ -196,7 +196,8 @@ lower(::Missing) = nothing
 lower(x::Symbol) = String(x)
 lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType, Type, Logging.LogLevel}) = string(x)
 lower(x::Regex) = x.pattern
-lower(x::Matrix) = eachcol(x)
+lower(x::AbstractArray{<:Any, N}) where {N} = (view(x, ntuple(_ -> :, N - 1)..., j) for j in axes(x, N))
+lower(x::AbstractVector) = x
 
 """
     JSONBase.lift(T, x)
