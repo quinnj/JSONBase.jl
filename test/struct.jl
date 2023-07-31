@@ -187,6 +187,13 @@ struct Recurs
     value::Union{Nothing,Recurs}
 end
 
+struct CustomJSONStyle <: JSONBase.JSONStyle end
+
+struct N
+    id::Int
+    uuid::UUID
+end
+
 @testset "JSONBase.materialize" begin
     obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
@@ -351,4 +358,14 @@ end
     m[5] = 5
     m[6] = 6
     @test JSONBase.materialize("[[[1.0],[2.0]],[[3.0],[4.0]],[[5.0],[6.0]]]", Array{Float64, 3}) == m
+    # 0-dimensional array
+    m = Array{Float64,0}(undef)
+    m[1] = 1.0
+    @test JSONBase.materialize("1.0", Array{Float64,0}) == m
+    # test custom JSONStyle
+    @test_throws MethodError JSONBase.materialize("340282366920938463463374607431768211455", UUID; style=CustomJSONStyle())
+    JSONBase.lift(::CustomJSONStyle, ::Type{UUID}, x) = UUID(UInt128(x))
+    @test JSONBase.materialize("340282366920938463463374607431768211455", UUID; style=CustomJSONStyle()) == UUID(typemax(UInt128))
+    JSONBase.lift(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UUID(UInt128(val)) : JSONBase.lift(N, key, val)
+    @test JSONBase.materialize("{\"id\": 0, \"uuid\": 340282366920938463463374607431768211455}", N; style=CustomJSONStyle()) == N(0, UUID(typemax(UInt128)))
 end

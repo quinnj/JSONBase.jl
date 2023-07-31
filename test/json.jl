@@ -164,4 +164,13 @@ JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
     m[5] = 5
     m[6] = 6
     @test JSONBase.json(m) == "[[[1.0],[2.0]],[[3.0],[4.0]],[[5.0],[6.0]]]"
+    # 0-dimensional array
+    m = Array{Float64,0}(undef)
+    m[1] = 1.0
+    @test JSONBase.json(m) == "1.0"
+    # test custom JSONStyle
+    JSONBase.lower(::CustomJSONStyle, x::UUID) = UInt128(x)
+    @test JSONBase.json(UUID(typemax(UInt128)); style=CustomJSONStyle()) == "340282366920938463463374607431768211455"
+    JSONBase.lower(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UInt128(val) : JSONBase.lower(val)
+    @test JSONBase.json(N(0, UUID(typemax(UInt128))); style=CustomJSONStyle()) == "{\"id\":0,\"uuid\":340282366920938463463374607431768211455}"
 end

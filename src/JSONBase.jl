@@ -24,6 +24,9 @@ using .Selectors
 
 include("lazy.jl")
 include("binary.jl")
+
+const Values = Union{LazyValue, BinaryValue}
+
 include("materialize.jl")
 include("json.jl")
 
@@ -31,8 +34,6 @@ include("json.jl")
 # API.applyeach function that operates potentially on a
 # PtrString to one that operates on a String
 keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
-
-const Values = Union{LazyValue, BinaryValue}
 
 # allow LazyValue/BinaryValue to participate in
 # selection syntax by overloading applyeach
@@ -84,7 +85,3 @@ end # module
        # create Dict/NamedTuple/Array and call tojson
        # use struct and call tojson
        # support jsonlines output
- # package docs
- # topretty
- # allow materialize on any ObjectLike? i.e. Dicts? (would need applyobject on Dict)
- # checkout JSON5, Amazon Ion?

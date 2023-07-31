@@ -10,7 +10,7 @@ sizeguess(_) = 512
     JSONBase.json(x) -> String
     JSONBase.json(io, x)
     JSONBase.json(file_name, x)
-    JSONBase.json!(buf, pos, x[, allownan]) -> pos
+    JSONBase.json!(buf, pos, x[, style, allownan]) -> pos
 
 Serialize `x` to JSON format. The 1st method takes just the object and returns a `String`.
 In the 2nd method, `io` is an `IO` object, and the JSON output will be written to it.
@@ -18,8 +18,13 @@ For the 3rd method, `file_name` is a `String`, a file will be opened and the JSO
 For the 4th method, a `buf` as a `Vector{UInt8}` is provided, along with an integer `pos` for the position where
 JSON output should start to be written. If the `buf` isn't large enough, it will be `resize!`ed to be large enough.
 
-All methods except the 4th accept `allownan::Bool=false` as a keyword argument.
-The 4th method optionally accepts `allownan` as a 4th positional argument.
+All methods except the 4th accept `style::JSONStyle` as a keyword argument.
+The 4th method optionally accepts `style` as a 4th positional argument, defaulting to `JSONBase.DefaultStyle()`.
+Passing a custom style will result in `lower(style, x)` being called, where custom lowerings can be defined
+for a custom style.
+
+All methods except the 4th also accept `allownan::Bool=false` as a keyword argument.
+The 4th method optionally accepts `allownan` as a 5th positional argument.
 If `allownan` is `true`, allow `Inf`, `-Inf`, and `NaN` in the output.
 If `allownan` is `false`, throw an error if `Inf`, `-Inf`, or `NaN` is encountered.
 `allownan` is `false` by default.
@@ -59,17 +64,17 @@ and isn't conducive to recursive situations. Types should define an appropriate
 """
 function json end
 
-function json(io::IO, x::T; allownan::Bool=false) where {T}
-    y = lower(x)
+function json(io::IO, x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false) where {T}
+    y = lower(style, x)
     buf = Vector{UInt8}(undef, sizeguess(y))
-    pos = json!(buf, 1, y, allownan, nothing)
+    pos = json!(buf, 1, y, style, allownan, nothing)
     return write(io, resize!(buf, pos - 1))
 end
 
-function json(x::T; allownan::Bool=false) where {T}
-    y = lower(x)
+function json(x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false) where {T}
+    y = lower(style, x)
     buf = Base.StringVector(sizeguess(y))
-    pos = json!(buf, 1, y, allownan, nothing)
+    pos = json!(buf, 1, y, style, allownan, nothing)
     return String(resize!(buf, pos - 1))
 end
 
@@ -93,9 +98,10 @@ macro checkn(n)
     end)
 end
 
-struct WriteClosure{arraylike, T} # T is the type of the parent object/array being written
+struct WriteClosure{JS, arraylike, T} # T is the type of the parent object/array being written
     buf::Vector{UInt8}
     pos::Ptr{Int}
+    style::JS
     allownan::Bool
     objids::Base.IdSet{Any} # to track circular references
 end
@@ -117,7 +123,7 @@ end
     return ex
 end
 
-@inline function (f::WriteClosure{arraylike, T})(key, val) where {arraylike, T}
+@inline function (f::WriteClosure{JS, arraylike, T})(key, val) where {JS, arraylike, T}
     pos = unsafe_load(f.pos)
     buf = f.buf
     # if not an array, we need to write the key + ':'
@@ -126,16 +132,16 @@ end
         @checkn 1
         buf[pos] = UInt8(':')
         pos += 1
-        lowered = lower(T, fieldsym(T, key), val)
+        lowered = lower(f.style, T, fieldsym(T, key), val)
     else
-        lowered = lower(val)
+        lowered = lower(f.style, val)
     end
     # check if the lowered value is in our objectid set
     if lowered in f.objids
         # if so, it's a circular reference! so we just write `null`
         pos = _null(buf, pos)
     else
-        pos = json!(buf, pos, lowered, f.allownan, f.objids)
+        pos = json!(buf, pos, lowered, f.style, f.allownan, f.objids)
     end
     @checkn 1
     buf[pos] = UInt8(',')
@@ -146,7 +152,7 @@ end
 end
 
 # assume x is lowered value
-function json!(buf, pos, x, allownan=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing)
+function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing)
     # string
     if x isa AbstractString
         return _string(buf, pos, x)
@@ -198,7 +204,7 @@ function json!(buf, pos, x, allownan=false, objids::Union{Nothing, Base.IdSet{An
         # use an IdSet to keep track of circular references
         objids = objids === nothing ? Base.IdSet{Any}() : objids
         push!(objids, x)
-        c = WriteClosure{al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), allownan, objids)
+        c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), style, allownan, objids)
         GC.@preserve ref API.applyeach(c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
