@@ -160,7 +160,49 @@ _valtype(d) = valtype(d)
 _valtype(d::AbstractVector{<:Pair}) = eltype(d).parameters[2]
 
 """
+    JSONStyle
 
+Similar to the `IndexStyle` or `BroadcastStyle` traits in Base, the `JSONStyle` trait
+allows defining a custom struct subtype like `struct CustomJSONSTyle <: JSONBase.JSONStyle end`
+and then passing to `JSONBase.json` or `JSONBase.materialize` where calls to [`JSONBase.lower`](@ref)
+and [`JSONBase.lift`](@ref) will receive the custom style as a 1st argument. This allows defining
+`lower`/`lift` methods on non-owned types without pirating default method definition or affecting other
+possible style overrides.
+
+# Example
+
+```julia
+struct CustomJSONStyle <: JSONBase.JSONStyle end
+
+struct N
+    id::Int
+    uuid::UUID
+end
+
+# override default UUID serialization behavior (write out as a number instead of a string)
+JSONBase.lower(::CustomJSONStyle, x::UUID) = UInt128(x)
+
+JSONBase.json(UUID(typemax(UInt128)); style=CustomJSONStyle())
+# "340282366920938463463374607431768211455"
+
+# override the UUID serialization behavior only for our N struct
+JSONBase.lower(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UInt128(val) : JSONBase.lower(val)
+
+JSONBase.json(N(0, UUID(typemax(UInt128))); style=CustomJSONStyle())
+# "{\"id\":0,\"uuid\":340282366920938463463374607431768211455}"
+
+# override the default UUID deserialization behavior (expecting to deserialize from a string)
+JSONBase.lift(::CustomJSONStyle, ::Type{UUID}, x) = UUID(UInt128(x))
+
+JSONBase.materialize("340282366920938463463374607431768211455", UUID; style=CustomJSONStyle())
+# UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+
+# override the default UUID deserialization only for our N struct
+JSONBase.lift(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UUID(UInt128(val)) : JSONBase.lift(N, key, val)
+
+JSONBase.materialize("{\"id\": 0, \"uuid\": 340282366920938463463374607431768211455}", N; style=CustomJSONStyle())
+# N(0, UUID("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+```
 """
 abstract type JSONStyle end
 struct DefaultStyle <: JSONStyle end
