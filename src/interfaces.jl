@@ -4,12 +4,12 @@ using Dates, UUIDs, Logging
 
 export applyeach, Continue, fields, mutable, kwdef,
        dictlike, addkeyval!, _keytype, _valtype,
-       lower, lift, arraylike
+       JSONStyle, DefaultStyle, lower, lift, arraylike
 
 """
     JSONBase.applyeach(f, x)
 
-A custom `applyeach` function that operates specifically on `(key, val)` or `(ind, val)` pairs,
+A custom `foreach`-like function that operates specifically on `(key, val)` or `(ind, val)` pairs,
 supports short-circuiting, and can return an updated state via `JSONBase.Continue`.
 For each key-value or index-value pair in `x`, call `f(k, v)`.
 If `f` doesn't return an `JSONBase.Continue` instance, `applyeach` should
@@ -47,7 +47,9 @@ Continue() = Continue(0)
     JSONBase.fields(T)
 
 Overload used by JSONBase during materialization and writing
-to override default field names, values, properties.
+to override default field names, values, properties. Custom type
+authors overload `fields` for their type `T` and provide a NamedTuple
+mapping Julia field names of their type to desired JSON field properties.
 
 Supported properties per field include:
   * `jsonkey::String`: a key name different from `fieldname(T, nm)` that will
@@ -158,8 +160,58 @@ _valtype(d) = valtype(d)
 _valtype(d::AbstractVector{<:Pair}) = eltype(d).parameters[2]
 
 """
+    JSONStyle
+
+Similar to the `IndexStyle` or `BroadcastStyle` traits in Base, the `JSONStyle` trait
+allows defining a custom struct subtype like `struct CustomJSONSTyle <: JSONBase.JSONStyle end`
+and then passing to `JSONBase.json` or `JSONBase.materialize` where calls to [`JSONBase.lower`](@ref)
+and [`JSONBase.lift`](@ref) will receive the custom style as a 1st argument. This allows defining
+`lower`/`lift` methods on non-owned types without pirating default method definition or affecting other
+possible style overrides.
+
+# Example
+
+```julia
+struct CustomJSONStyle <: JSONBase.JSONStyle end
+
+struct N
+    id::Int
+    uuid::UUID
+end
+
+# override default UUID serialization behavior (write out as a number instead of a string)
+JSONBase.lower(::CustomJSONStyle, x::UUID) = UInt128(x)
+
+JSONBase.json(UUID(typemax(UInt128)); style=CustomJSONStyle())
+# "340282366920938463463374607431768211455"
+
+# override the UUID serialization behavior only for our N struct
+JSONBase.lower(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UInt128(val) : JSONBase.lower(val)
+
+JSONBase.json(N(0, UUID(typemax(UInt128))); style=CustomJSONStyle())
+# "{\"id\":0,\"uuid\":340282366920938463463374607431768211455}"
+
+# override the default UUID deserialization behavior (expecting to deserialize from a string)
+JSONBase.lift(::CustomJSONStyle, ::Type{UUID}, x) = UUID(UInt128(x))
+
+JSONBase.materialize("340282366920938463463374607431768211455", UUID; style=CustomJSONStyle())
+# UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+
+# override the default UUID deserialization only for our N struct
+JSONBase.lift(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UUID(UInt128(val)) : JSONBase.lift(N, key, val)
+
+JSONBase.materialize("{\"id\": 0, \"uuid\": 340282366920938463463374607431768211455}", N; style=CustomJSONStyle())
+# N(0, UUID("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+```
+"""
+abstract type JSONStyle end
+struct DefaultStyle <: JSONStyle end
+
+"""
     JSONBase.lower(x)
     JSONBase.lower(::Type{T}, key, val)
+    JSONBase.lower(::JSONStyle, x)
+    JSONBase.lower(::JSONStyle, ::Type{T}, key, val)
 
 Allow an object `x` to be "lowered" into a JSON-compatible representation.
 The 2nd method allows overloading lower for an object of type `T` for a specific
@@ -167,6 +219,9 @@ key-value representing the field name (as a Symbol) and the field value being se
 This allows customizing the serialization of a specific field of a type without
 needing to clash with other global `lower` methods or lower an entire object
 when only specific fields need custom lowering.
+
+The latter 2 methods take a custom [`JSONStyle`](@ref) struct as a 1st argument and allow
+over-riding the lowering of non-owned types.
 
 Examples of overloading `lower` for custom types could look like:
     
@@ -180,8 +235,7 @@ struct Person
     birthdate::Date
 end
 
-# we want to serialize the birthdate as a string with
-# a non-default format
+# we want to serialize the birthdate as a string with a non-default date format
 JSONBase.lower(::Type{Person}, key, val) = key == :birthdate ? Dates.format(val, dateformat"mm/dd/yyyy") : lower(val)
 ```
 """
@@ -191,17 +245,24 @@ lower(x) = x
 # allow field-specific lowering for types
 lower(::Type{T}, key, val) where {T} = lower(val)
 
+# default style fallbacks
+lower(::JSONStyle, x) = lower(x)
+lower(::JSONStyle, ::Type{T}, key, val) where {T} = lower(T, key, val)
+
 # some default lowerings for common types
 lower(::Missing) = nothing
 lower(x::Symbol) = String(x)
 lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType, Type, Logging.LogLevel}) = string(x)
 lower(x::Regex) = x.pattern
+lower(x::AbstractArray{<:Any,0}) = x[1]
 lower(x::AbstractArray{<:Any, N}) where {N} = (view(x, ntuple(_ -> :, N - 1)..., j) for j in axes(x, N))
 lower(x::AbstractVector) = x
 
 """
     JSONBase.lift(T, x)
     JSONBase.lift(::Type{T}, key, val)
+    JSONBase.lift(::JSONStyle, T, x)
+    JSONBase.lift(::JSONStyle, ::Type{T}, key, val)
 
 Allow a JSON-native object `x` to be converted into the custom type `T`.
 This is used to allow for custom types to be constructed directly in the
@@ -215,9 +276,11 @@ materialization process.
   * A `Vector{Any}`: parsed from a JSON array
   * A `Dict{String, Any}`: parsed from a JSON object
 
-Note that the types used for JSON strings, arrays, and objects can be controlled via
-passing a custom [`JSONBase.Types`](@ref) object to [`JSONBase.materialize`](@ref) via
-the `types` keyword argument.
+Note that the type used for JSON objects can be controlled via
+passing a custom dict type via the `dicttype` keyword argument to [`JSONBase.materialize`](@ref).
+
+The latter 2 methods take a custom [`JSONStyle`](@ref) struct as a 1st argument and allow
+over-riding the lifting of non-owned types.
 
 Examples of overloading `lift` for custom types could look like:
     
@@ -240,11 +303,21 @@ JSONBase.lift(::Type{Person}, key, val) = key == :birthdate ? Dates.parse(val, d
 function lift end
 
 lift(::Type{T}, x) where {T} = Base.issingletontype(T) ? T() : convert(T, x)
-lift(::Type{T}, key::Symbol, val) where {T} = lift(fieldtype(T, key), val)
+lift(::Type{T}, key, val) where {T} = lift(fieldtype(T, key), val)
+
+# default style fallbacks
+lift(::JSONStyle, ::Type{T}, x) where {T} = lift(T, x)
+lift(::JSONStyle, ::Type{T}, key, val) where {T} = lift(T, key, val)
 
 # some default lift definitions for common types
 lift(::Type{T}, ::Nothing) where {T >: Missing} = T === Any ? nothing : missing
 lift(::Type{T}, x::String) where {T <: Union{VersionNumber, UUID, Dates.TimeType, Regex}} = T(x)
+# bit of an odd case, but support 0-dimensional array lifting from scalar value
+function lift(::Type{A}, x) where {A <: AbstractArray{T, 0}} where {T}
+    m = A(undef)
+    m[1] = lift(T, x)
+    return m
+end
 
 function lift(::Type{Char}, x::String)
     if length(x) == 1
