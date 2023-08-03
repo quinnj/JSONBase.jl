@@ -194,6 +194,11 @@ struct N
     uuid::UUID
 end
 
+struct O
+    id::Int
+    name::Union{I,L,Missing,Nothing}
+end
+
 @testset "JSONBase.materialize" begin
     obj = JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
     @test obj == A(1, 2, 3, 4)
@@ -236,11 +241,9 @@ end
     @test JSONBase.materialize("\"apple\"", Fruit) == apple
     @test JSONBase.materialize("""{"id": 1, "name": "2", "fruit": "banana"}  """, I) == I(1, "2", banana)
     # abstract type
-    x = JSONBase.lazy("""{"type": "car","make": "Mercedes-Benz","model": "S500","seatingCapacity": 5,"topSpeed": 250.1}""")
-    choose(x) = x.type[] == "car" ? Car : Truck
-    @test JSONBase.materialize(x, choose(x)) == Car("car", "Mercedes-Benz", "S500", 5, 250.1)
-    x = JSONBase.lazy("""{"type": "truck","make": "Isuzu","model": "NQR","payloadCapacity": 7500.5}""")
-    @test JSONBase.materialize(x, choose(x)) == Truck("truck", "Isuzu", "NQR", 7500.5)
+    JSONBase.choosetype(::Type{Vehicle}, x) = x.type[] == "car" ? Car : Truck
+    @test JSONBase.materialize("""{"type": "car","make": "Mercedes-Benz","model": "S500","seatingCapacity": 5,"topSpeed": 250.1}""", Vehicle) == Car("car", "Mercedes-Benz", "S500", 5, 250.1)
+    @test JSONBase.materialize("""{"type": "truck","make": "Isuzu","model": "NQR","payloadCapacity": 7500.5}""", Vehicle) == Truck("truck", "Isuzu", "NQR", 7500.5)
     # union
     @test JSONBase.materialize("""{"id": 1, "name": "2", "rate": 3}""", J) == J(1, "2", 3)
     @test JSONBase.materialize("""{"id": null, "name": null, "rate": 3.14}""", J) == J(nothing, nothing, 3.14)
@@ -368,4 +371,10 @@ end
     @test JSONBase.materialize("340282366920938463463374607431768211455", UUID; style=CustomJSONStyle()) == UUID(typemax(UInt128))
     JSONBase.lift(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UUID(UInt128(val)) : JSONBase.lift(N, key, val)
     @test JSONBase.materialize("{\"id\": 0, \"uuid\": 340282366920938463463374607431768211455}", N; style=CustomJSONStyle()) == N(0, UUID(typemax(UInt128)))
+    # tricky unions
+    @test JSONBase.materialize("{\"id\":0}", O) == O(0, nothing)
+    @test JSONBase.materialize("{\"id\":0,\"name\":null}", O) == O(0, missing)
+    JSONBase.choosetype(::Type{O}, key, ::Type{Union{I,L,Missing,Nothing}}, val) = JSONBase.gettype(val) == JSONBase.JSONTypes.NULL ? Missing : hasproperty(val, :fruit) ? I : L
+    @test JSONBase.materialize("{\"id\":0,\"name\":{\"id\":1,\"name\":\"jim\",\"fruit\":\"apple\"}}", O) == O(0, I(1, "jim", apple))
+    @test JSONBase.materialize("{\"id\":0,\"name\":{\"id\":1,\"firstName\":\"jim\",\"rate\":3.14}}", O) == O(0, L(1, "jim", 3.14))
 end

@@ -17,6 +17,18 @@ include("utils.jl")
 include("interfaces.jl")
 using .API
 
+function API.choosetype(::Type{T}, x) where {T}
+  if T isa Union
+      type = gettype(x)
+      if type == JSONTypes.OBJECT ||
+          type == JSONTypes.ARRAY ||
+          type == JSONTypes.STRING
+          return non_nothing_missing_type(T)
+      end
+  end
+  return T
+end
+
 pass(args...) = Continue(0)
 
 include("selectors.jl")
