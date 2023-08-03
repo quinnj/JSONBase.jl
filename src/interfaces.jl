@@ -4,7 +4,7 @@ using Dates, UUIDs, Logging
 
 export applyeach, Continue, fields, mutable, kwdef,
        dictlike, addkeyval!, _keytype, _valtype,
-       JSONStyle, DefaultStyle, lower, lift, arraylike
+       JSONStyle, DefaultStyle, lower, lift, choosetype, arraylike
 
 """
     JSONBase.applyeach(f, x)
@@ -326,6 +326,68 @@ function lift(::Type{Char}, x::String)
         throw(ArgumentError("invalid `Char` from string value: \"$x\""))
     end
 end
+
+"""
+    JSONBase.choosetype(T, x) -> S
+    JSONBase.choosetype(T, key, FT, val) -> S
+    JSONBase.choosetype(::JSONStyle, T, x) -> S
+    JSONBase.choosetype(::JSONStyle, T, key, FT, val) -> S
+
+Interface to allow "choosing" the right type for materialization
+in cases where it would otherwise be ambiguous or unknown.
+The type `T` is the abstact or Union type we want to disambiguate.
+`x` is a `JSONBase.LazyValue` or `JSONBase.BinaryValue` where fields
+can be accessed using the selection syntax. The type of the JSON
+value can also be inspected via `JSONBase.gettype(x)`. The JSON
+type and field values can be used to provide the materialization
+operation a more concrete or specific type to use for materializing.
+
+The 2nd method allows overloading `choosetype` on a parent type `T` for a specific
+field where the `key` is the field name (as a Symbol), `FT` is the field type,
+and `x` is the `JSONBase.LazyValue` or `JSONBase.BinaryValue` for the field value.
+This allows customizing the materialization of a specific field of a type without
+needing to clash with other global `choosetype` methods.
+
+The latter 2 methods take a custom [`JSONStyle`](@ref) struct as a 1st argument and allow
+over-riding the type choice of non-owned types.
+
+# Examples
+
+Examples of overloading `choosetype` for custom types could look like:
+
+```julia
+abstract type Vehicle end
+
+struct Car <: Vehicle
+    type::String
+    make::String
+    model::String
+    seatingCapacity::Int
+    topSpeed::Float64
+end
+
+struct Truck <: Vehicle
+    type::String
+    make::String
+    model::String
+    payloadCapacity::Float64
+end
+
+# overload choosetype for the Vehicle type to choose between Car and Truck
+# based on the `type` field value
+JSONBase.choosetype(::Type{Vehicle}, x) = x.type[] == "car" ? Car : Truck
+
+JSONBase.materialize("{\"type\": \"car\",\"make\": \"Mercedes-Benz\",\"model\": \"S500\",\"seatingCapacity\": 5,\"topSpeed\": 250.1}", Vehicle)
+# returns Car("car", "Mercedes-Benz", "S500", 5, 250.1)
+```
+"""
+function choosetype end
+
+choosetype(::Type{T}, key, ::Type{FT}, val) where {T, FT} = choosetype(FT, val)
+
+# default style fallbacks
+choosetype(::JSONStyle, ::Type{T}, x) where {T} = choosetype(T, x)
+choosetype(::JSONStyle, ::Type{T}, key, ::Type{FT}, val) where {T, FT} = choosetype(T, key, FT, val)
 
 """
     JSONBase.arraylike(x)

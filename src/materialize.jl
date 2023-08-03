@@ -64,7 +64,7 @@ end
 
 @inline function materialize(x::LazyValue, ::Type{T}=Any; style::JSONStyle=DefaultStyle(), dicttype::Type{O}=Dict{String, Any}) where {T, O}
     y = ConvertClosure{T}(style)
-    pos = materialize(y, x, T, style, O)
+    pos = materialize(y, x, choosetype(style, T, x), style, O)
     checkendpos(x, pos, T)
     return y.x
 end
@@ -93,7 +93,7 @@ end
 
 function materialize(x::BinaryValue, ::Type{T}=Any; style::JSONStyle=DefaultStyle(), dicttype::Type{O}=Dict{String, Any}) where {T, O}
     y = ConvertClosure{T}(style)
-    materialize(y, x, T, style, O)
+    materialize(y, x, choosetype(style, T, x), style, O)
     return y.x
 end
 
@@ -115,7 +115,7 @@ end
 end
 
 @inline function (f::GenericObjectClosure{JS, O, T})(key, val) where {JS, O, T}
-    pos = _materialize(GenericObjectValFunc{JS, O, typeof(key)}(f.style, f.keyvals, key), val, _valtype(f.keyvals), f.style, T)
+    pos = _materialize(GenericObjectValFunc{JS, O, typeof(key)}(f.style, f.keyvals, key), val, choosetype(f.style, _valtype(f.keyvals), val), f.style, T)
     return Continue(pos)
 end
 
@@ -133,7 +133,7 @@ end
     push!(f.arr, lift(f.style, eltype(f.arr), x))
 
 @inline function (f::GenericArrayClosure{JS, A, T})(i, val) where {JS, A, T}
-    pos = _materialize(GenericArrayValFunc{JS, A}(f.style, f.arr), val, eltype(f.arr), f.style, T)
+    pos = _materialize(GenericArrayValFunc{JS, A}(f.style, f.arr), val, choosetype(f.style, eltype(f.arr), val), f.style, T)
     return Continue(pos)
 end
 
@@ -184,7 +184,7 @@ end
         f.cur_dim[] += 1
         return pos
     else
-        pos = _materialize(MultiDimValFunc(f.style, f.arr, f.dims), val, eltype(f.arr), f.style, T)
+        pos = _materialize(MultiDimValFunc(f.style, f.arr, f.dims), val, choosetype(f.style, eltype(f.arr), val), f.style, T)
     end
     return Continue(pos)
 end
@@ -211,45 +211,39 @@ end
     JS = typeof(style)
     type = gettype(x)
     if type == JSONTypes.OBJECT
-        #TODO: if T is a Union, then the below only really works
-        # for Nothing/Missing (obviously)
-        # to support a field like ::Union{StructA, StructB}
-        # we could define an interface function like
-        # JSONBase.choosetype(::Union, x) -> T
-        # so users could overload for the union type w/ their type
-        # and, given the LazyValue/BinaryValue, choose which member
-        # of the union should be materialized (by returning it from choosetype)
-        S = non_nothing_missing_type(T)
-        if S === Any
+        # because of the default `choosetype` fallback
+        # we shouldn't get a Union for T and can assume
+        # T is the final object type
+        if T === Any
             d = O()
             pos = applyobject(GenericObjectClosure{JS, O, O}(style, d), x).pos
             valfunc(d)
             return pos
-        elseif dictlike(S)
-            d = S()
-            pos = applyobject(GenericObjectClosure{JS, S, O}(style, d), x).pos
+        elseif dictlike(T)
+            d = T()
+            pos = applyobject(GenericObjectClosure{JS, T, O}(style, d), x).pos
             valfunc(d)
             return pos
-        elseif mutable(S)
-                y = S()
-                pos = materialize!(x, y, style, O)
-                valfunc(y)
-                return pos
-        elseif kwdef(S)
+        elseif mutable(T)
+            y = T()
+            pos = materialize!(x, y, style, O)
+            valfunc(y)
+            return pos
+        elseif kwdef(T)
             kws = Pair{Symbol, Any}[]
-            c = KwClosure{JS, S, O}(style, kws)
+            c = KwClosure{JS, T, O}(style, kws)
             pos = applyobject(c, x).pos
-            y = S(; kws...)
+            y = T(; kws...)
             valfunc(y)
             return pos
         else
             # struct fallback
-            N = fieldcount(S)
+            N = fieldcount(T)
             vec = Vector{Any}(undef, N)
-            sc = StructClosure{JS, S, O}(style, vec)
+            sc = StructClosure{JS, T, O}(style, vec)
             pos = applyobject(sc, x).pos
-            constructor = S <: NamedTuple ? ((x...) -> S(tuple(x...))) : S
-            construct(S, constructor, vec, valfunc)
+            constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
+            construct(T, constructor, vec, valfunc)
             return pos
         end
     elseif type == JSONTypes.ARRAY
@@ -334,7 +328,8 @@ end
             str = field !== nothing && haskey(field, :jsonkey) ? field.jsonkey : $str
             if Selectors.eq(key, str)
                 c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
-                pos = _materialize(c, val, $ftype, style, $O)
+                typ = choosetype(style, $T, key, $ftype, val)
+                pos = _materialize(c, val, typ, style, $O)
                 return Continue(pos)
             end
         end)

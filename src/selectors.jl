@@ -215,6 +215,7 @@ macro selectors(T)
         Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(x, ~, arg)
         Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(x, key)
         Base.propertynames(x::$T) = Selectors._propertynames(x)
+        Base.hasproperty(x::$T, key::Symbol) = key in propertynames(x)
     end)
 end
 
