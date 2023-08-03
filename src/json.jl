@@ -75,14 +75,14 @@ function json(io::IO, x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=fals
     return write(io, resize!(buf, pos - 1))
 end
 
-function json(x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false, pretty::Union{Integer,Bool}=false) where {T}
+function json(x; style::JSONStyle=DefaultStyle(), allownan::Bool=false, pretty::Union{Integer,Bool}=false)
     y = lower(style, x)
     buf = Base.StringVector(sizeguess(y))
     pos = json!(buf, 1, y, style, allownan, nothing, pretty === true ? 4 : Int(pretty))
     return String(resize!(buf, pos - 1))
 end
 
-function json(fname::String, obj::T; kw...) where {T}
+function json(fname::String, obj; kw...)
     open(fname, "w") do io
         json(io, obj; kw...)
     end
