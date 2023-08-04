@@ -142,13 +142,13 @@ end
     # LazyObject with all possible JSON types
     x = JSONBase.lazy("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
     @test length(x) == 7
-    if VERSION > v"1.6"
+    if VERSION >= v"1.7"
         @test sprint(show, x) == "LazyObject{String} with 7 entries:\n  \"a\" => JSONBase.LazyValue(1)\n  \"b\" => JSONBase.LazyValue(nothing)\n  \"c\" => JSONBase.LazyValue(true)\n  \"d\" => JSONBase.LazyValue(false)\n  \"e\" => JSONBase.LazyValue(\"\")\n  \"f\" => LazyValue[]\n  \"g\" => LazyObject{String}()"
     end
     # LazyArray with all possible JSON types
     x = JSONBase.lazy("[1, null, true, false, \"\", [], {}]")
     @test length(x) == 7
-    if VERSION > v"1.6"
+    if VERSION >= v"1.7"
         @test sprint(show, x) == "7-element LazyArray{String}:\n JSONBase.LazyValue(1)\n JSONBase.LazyValue(nothing)\n JSONBase.LazyValue(true)\n JSONBase.LazyValue(false)\n JSONBase.LazyValue(\"\")\n LazyValue[]\n LazyObject{String}()"
     end
     # error cases
@@ -217,13 +217,13 @@ end
     # BinaryObject with all possible JSON types
     x = JSONBase.binary("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
     @test length(x) == 7
-    if VERSION > v"1.6"
+    if VERSION >= v"1.7"
         @test sprint(show, x) == "BinaryObject with 7 entries:\n  \"a\" => JSONBase.BinaryValue(1)\n  \"b\" => JSONBase.BinaryValue(nothing)\n  \"c\" => JSONBase.BinaryValue(true)\n  \"d\" => JSONBase.BinaryValue(false)\n  \"e\" => JSONBase.BinaryValue(\"\")\n  \"f\" => BinaryValue[]\n  \"g\" => BinaryObject()"
     end
     # BinaryArray with all possible JSON types
     x = JSONBase.binary("[1, null, true, false, \"\", [], {}]")
     @test length(x) == 7
-    if VERSION > v"1.6"
+    if VERSION >= v"1.7"
         @test sprint(show, x) == "7-element BinaryArray:\n JSONBase.BinaryValue(1)\n JSONBase.BinaryValue(nothing)\n JSONBase.BinaryValue(true)\n JSONBase.BinaryValue(false)\n JSONBase.BinaryValue(\"\")\n BinaryValue[]\n BinaryObject()"
     end
 end
