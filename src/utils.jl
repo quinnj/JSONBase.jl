@@ -159,7 +159,7 @@ An example overload would look something like:
 JSONBase.tostring(x::MyDecimal) = string(x)
 ```
 """
-tostring(x) = string(x)
+tostring(x) = string(convert(Float64, x))
 
 _symbol(ptr, len) = ccall(:jl_symbol_n, Ref{Symbol}, (Ptr{UInt8}, Int), ptr, len)
 
@@ -180,6 +180,8 @@ function streq(x::PtrString, y::AbstractString)
         return x.len == sizeof(y) && ccall(:memcmp, Cint, (Ptr{UInt8}, Ptr{UInt8}, Csize_t), x.ptr, pointer(y), x.len) == 0
     end
 end
+
+streq(x::PtrString, y::PtrString) = x.len == y.len && ccall(:memcmp, Cint, (Ptr{UInt8}, Ptr{UInt8}, Csize_t), x.ptr, y.ptr, x.len) == 0
 
 # unsafe because we're not checking that src or dst are valid pointers
 # NOR are we checking that up to `n` bytes after dst are also valid to write to

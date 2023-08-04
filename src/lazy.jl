@@ -83,18 +83,7 @@ end
 
 const LazyValues{T} = Union{LazyValue{T}, LazyObject{T}, LazyArray{T}}
 
-getlength(x::LazyValues) = getlength(getbuf(x))
-
 gettype(::LazyObject) = JSONTypes.OBJECT
-
-struct LengthClosure
-    len::Ptr{Int}
-end
-
-@inline function (f::LengthClosure)(_, _)
-    unsafe_store!(f.len, unsafe_load(f.len) + 1)
-    return Continue()
-end
 
 function Base.length(x::LazyObject)
     ref = Ref(0)
@@ -134,10 +123,10 @@ Base.IndexStyle(::Type{<:LazyArray}) = Base.IndexLinear()
 
 function Base.size(x::LazyArray)
     ref = Ref(0)
-    alc = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
+    lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
     GC.@preserve ref begin
-        applyarray(alc, x)
-        return (unsafe_load(alc.len),)
+        applyarray(lc, x)
+        return (unsafe_load(lc.len),)
     end
 end
 

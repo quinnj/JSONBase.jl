@@ -31,6 +31,17 @@ end
 
 pass(args...) = Continue(0)
 
+struct LengthClosure
+  len::Ptr{Int}
+end
+
+# for use in apply* functions
+@inline function (f::LengthClosure)(_, _)
+  cur = unsafe_load(f.len)
+  unsafe_store!(f.len, cur + 1)
+  return Continue()
+end
+
 include("selectors.jl")
 using .Selectors
 
@@ -49,7 +60,7 @@ keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
 # allow LazyValue/BinaryValue to participate in
 # selection syntax by overloading applyeach
-function API.applyeach(f, x::Values)
+@inline function API.applyeach(f, x::Values)
     if gettype(x) == JSONTypes.OBJECT
         return applyobject(keyvaltostring(f), x)
     elseif gettype(x) == JSONTypes.ARRAY

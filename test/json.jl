@@ -10,6 +10,10 @@ JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
     nm == :datetime ? Dates.format(val, "yyyy/mm/dd HH:MM:SS") :
     Dates.format(val, "HH/MM/SS")
 
+struct CustomNumber <: Real
+    x::Float64
+end
+
 @testset "JSON output" begin
     @test JSONBase.json(nothing) == "null"
     @test JSONBase.json(true) == "true"
@@ -173,7 +177,15 @@ JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
     @test JSONBase.json(UUID(typemax(UInt128)); style=CustomJSONStyle()) == "340282366920938463463374607431768211455"
     JSONBase.lower(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UInt128(val) : JSONBase.lower(val)
     @test JSONBase.json(N(0, UUID(typemax(UInt128))); style=CustomJSONStyle()) == "{\"id\":0,\"uuid\":340282366920938463463374607431768211455}"
-
+    # JSONBase.json forms
+    io = IOBuffer()
+    JSONBase.json(io, missing)
+    @test String(take!(io)) == "null"
+    fname, io = mktemp()
+    close(io)
+    JSONBase.json(fname, missing)
+    @test read(fname, String) == "null"
+    rm(fname)
     @testset "pretty output" begin
         @test JSONBase.json([1, 2, 3], pretty=true) == "[\n    1,\n    2,\n    3\n]"
         @test JSONBase.json([1, 2, 3], pretty=2) == "[\n  1,\n  2,\n  3\n]"
@@ -185,5 +197,14 @@ JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
         @test JSONBase.json([1, [2, 3], [4, [5, 6]]], pretty=2) == "[\n  1,\n  [\n    2,\n    3\n  ],\n  [\n    4,\n    [\n      5,\n      6\n    ]\n  ]\n]"
         # several levels of nesting with a mix of nulls, numbers, strings, booleans, empty objects, arrays, etc.
         @test JSONBase.json([1, [2, 3], [4, [5, 6]], nothing, "hey", 3.14, true, false, Dict(), []], pretty=2) == "[\n  1,\n  [\n    2,\n    3\n  ],\n  [\n    4,\n    [\n      5,\n      6\n    ]\n  ],\n  null,\n  \"hey\",\n  3.14,\n  true,\n  false,\n  {},\n  []\n]"
+        # JSON.jl pre-1.0 compat
+        io = IOBuffer()
+        JSONBase.print(io, [1, 2, 3], 2)
+        @test String(take!(io)) == "[\n  1,\n  2,\n  3\n]"
+        @test JSONBase.json([1, 2, 3], 2) == "[\n  1,\n  2,\n  3\n]"
     end
+    # non-Integer/AbstractFloat but <: Real output
+    @test_throws MethodError JSONBase.json(CustomNumber(3.14))
+    JSONBase.tostring(x::CustomNumber) = string(x.x)
+    @test JSONBase.json(CustomNumber(3.14)) == "3.14"
 end

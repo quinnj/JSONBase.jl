@@ -3,17 +3,26 @@ using Test, JSONBase, UUIDs, Dates, OrderedCollections #, BenchmarkTools, JSON
 # helper struct for testing reading json from files
 struct File end
 
+function makefile(x)
+    nm, io = mktemp()
+    write(io, x)
+    seekstart(io)
+    close(io)
+    return nm
+end
+
+make(::Type{String}, x) = x
+make(::Type{SubString{String}}, x) = SubString(x)
+make(::Type{Vector{UInt8}}, x) = Vector{UInt8}(x)
+make(::Type{IOBuffer}, x) = IOBuffer(x)
+function make(::Type{File}, x)
+    _, io = mktemp()
+    write(io, x)
+    seekstart(io)
+    return io
+end
+
 @testset "JSONBase.lazy" begin
-    make(::Type{String}, x) = x
-    make(::Type{SubString{String}}, x) = SubString(x)
-    make(::Type{Vector{UInt8}}, x) = Vector{UInt8}(x)
-    make(::Type{IOBuffer}, x) = IOBuffer(x)
-    function make(::Type{File}, x)
-        _, io = mktemp()
-        write(io, x)
-        seekstart(io)
-        return io
-    end
     for T in (String, SubString{String}, IOBuffer, Vector{UInt8}, File)
         @test JSONBase.gettype(JSONBase.lazy(make(T, "1"))) == JSONBase.JSONTypes.NUMBER
         @test JSONBase.gettype(JSONBase.lazy(make(T, "true"))) == JSONBase.JSONTypes.TRUE
@@ -24,9 +33,16 @@ struct File end
         @test JSONBase.gettype(JSONBase.lazy(make(T, "\"\""))) == JSONBase.JSONTypes.STRING
         @test_throws ArgumentError JSONBase.lazy(make(T, "a"))
     end
+    # JSON.jl pre-1.0 compat
+    x = JSONBase.parse("{}")
+    @test isempty(x) && typeof(x) == Dict{String, Any}
+    x = JSONBase.parsefile(makefile("{}"))
+    @test isempty(x) && typeof(x) == Dict{String, Any}
     x = JSONBase.materialize("{}")
     @test isempty(x) && typeof(x) == Dict{String, Any}
     @test_throws ArgumentError JSONBase.materialize(JSONBase.LazyValue(".", 1, JSONBase.JSONTypes.OBJECT, JSONBase.OPTIONS))
+    x = JSONBase.lazy("1")
+    @test_throws ArgumentError JSONBase.API.applyeach((k, v) -> nothing, x)
     x = JSONBase.materialize("{\"a\": 1}")
     @test !isempty(x) && x["a"] == 1 && typeof(x) == Dict{String, Any}
     x = JSONBase.materialize("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
@@ -123,6 +139,25 @@ struct File end
      Dict("name" => "Alexa", "wins" => [["two pair", "4♠"], ["two pair", "9♠"]]),
      Dict("name" => "May", "wins" => []),
      Dict("name" => "Deloise", "wins" => [["three of a kind", "5♣"]])]
+    # LazyObject with all possible JSON types
+    x = JSONBase.lazy("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
+    @test length(x) == 7
+    if VERSION >= v"1.7"
+        @test sprint(show, x) == "LazyObject{String} with 7 entries:\n  \"a\" => JSONBase.LazyValue(1)\n  \"b\" => JSONBase.LazyValue(nothing)\n  \"c\" => JSONBase.LazyValue(true)\n  \"d\" => JSONBase.LazyValue(false)\n  \"e\" => JSONBase.LazyValue(\"\")\n  \"f\" => LazyValue[]\n  \"g\" => LazyObject{String}()"
+    end
+    # LazyArray with all possible JSON types
+    x = JSONBase.lazy("[1, null, true, false, \"\", [], {}]")
+    @test length(x) == 7
+    if VERSION >= v"1.7"
+        @test sprint(show, x) == "7-element LazyArray{String}:\n JSONBase.LazyValue(1)\n JSONBase.LazyValue(nothing)\n JSONBase.LazyValue(true)\n JSONBase.LazyValue(false)\n JSONBase.LazyValue(\"\")\n LazyValue[]\n LazyObject{String}()"
+    end
+    # error cases
+    @test_throws ArgumentError JSONBase.materialize("{\"a\" 1}")
+    x = JSONBase.lazy("{}")
+    @test_throws ArgumentError JSONBase.applyarray((i, v) -> nothing, x)
+    @test_throws ArgumentError JSONBase.applystring(nothing, x)
+    x = JSONBase.lazy("{}"; float64=true)
+    @test_throws ArgumentError JSONBase.applynumber(x -> nothing, x)
 end
 
 @testset "Non-default object types: `JSONBase.$f`" for f in (JSONBase.lazy, JSONBase.binary)
@@ -153,18 +188,14 @@ end
         @test bm.size.is_size_embedded
     end
 
-    make(::Type{String}, x) = x
-    make(::Type{SubString{String}}, x) = SubString(x)
-    make(::Type{Vector{UInt8}}, x) = Vector{UInt8}(x)
-    make(::Type{IOBuffer}, x) = IOBuffer(x)
-    for T in (String, SubString{String}, IOBuffer, Vector{UInt8})
+    for T in (String, SubString{String}, IOBuffer, Vector{UInt8}, File)
         @test JSONBase.binary(make(T, "{}"))[] == Dict{String, Any}()
         @test JSONBase.binary(make(T, "1"))[] == 1
         @test JSONBase.binary(make(T, "3.14"))[] == 3.14
         @test JSONBase.binary(make(T, "true"))[] == true
         @test JSONBase.binary(make(T, "false"))[] == false
         @test JSONBase.binary(make(T, "null"))[] === nothing
-        @test JSONBase.binary(make(T, "[]"))[] == Any[]
+        @test JSONBase.binary(make(T, "[] "))[] == Any[]
         @test JSONBase.binary(make(T, "\"\""))[] == ""
         @test_throws ArgumentError JSONBase.binary(make(T, "a"))
     end
@@ -172,6 +203,29 @@ end
     @test x[] == Dict{String, Any}("a" => 1, "b" => nothing, "c" => true, "d" => false, "e" => "hey there sailor", "f" => Any[], "g" => Dict{String, Any}())
     x = JSONBase.binary("""{"category": "reference","author": "Nigel Rees","title": "Sayings of the Century","price": 8.95}""")
     @test x[] == Dict{String, Any}("category" => "reference", "author" => "Nigel Rees", "title" => "Sayings of the Century", "price" => 8.95)
+    x = JSONBase.binary("\"abc\"")
+    # these aren't really part of the public API, but are good for test coverage
+    @test JSONBase.applystring(x) do s
+        @test JSONBase.tostring(String, s) == "abc"
+    end == 5
+    pstr, _ = JSONBase.applystring(nothing, x)
+    @test JSONBase.Selectors.eq(:abc, "abc")
+    @test JSONBase.Selectors.eq(:abc, pstr)
+    @test JSONBase.Selectors.eq(pstr, :abc)
+    @test JSONBase.Selectors.eq(pstr, pstr)
+    @test JSONBase.Selectors.eq("abc", pstr)
+    # BinaryObject with all possible JSON types
+    x = JSONBase.binary("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
+    @test length(x) == 7
+    if VERSION >= v"1.7"
+        @test sprint(show, x) == "BinaryObject with 7 entries:\n  \"a\" => JSONBase.BinaryValue(1)\n  \"b\" => JSONBase.BinaryValue(nothing)\n  \"c\" => JSONBase.BinaryValue(true)\n  \"d\" => JSONBase.BinaryValue(false)\n  \"e\" => JSONBase.BinaryValue(\"\")\n  \"f\" => BinaryValue[]\n  \"g\" => BinaryObject()"
+    end
+    # BinaryArray with all possible JSON types
+    x = JSONBase.binary("[1, null, true, false, \"\", [], {}]")
+    @test length(x) == 7
+    if VERSION >= v"1.7"
+        @test sprint(show, x) == "7-element BinaryArray:\n JSONBase.BinaryValue(1)\n JSONBase.BinaryValue(nothing)\n JSONBase.BinaryValue(true)\n JSONBase.BinaryValue(false)\n JSONBase.BinaryValue(\"\")\n BinaryValue[]\n BinaryObject()"
+    end
 end
 
 @testset "General JSON" begin
@@ -256,6 +310,11 @@ end
         @test length(y) == 20
         @test_throws KeyError x.foo
         @test_throws KeyError x.store.book[100]
+        list = x.store.book[:]
+        @test eltype(list) == Any
+        @test isassigned(list, 1)
+        @test list[:] === list
+        @test length(list[[1, 3]]) == 2
     end
     # test that we correctly skip over all kinds of values
     json = """
@@ -289,6 +348,20 @@ end
     """
     for x in (JSONBase.lazy(json), JSONBase.binary(json))
         @test x.z[] == 602
+    end
+    json = """
+    [
+        {
+            "a": [1, 2, 3]
+        },
+        {
+            "a": [1, 2, 3]
+        }
+    ]
+    """
+    for x in (JSONBase.lazy(json), JSONBase.binary(json))
+        @test x[~, "a"][] == [1, 2, 3, 1, 2, 3]
+        @test x[:].a[] == [[1, 2, 3], [1, 2, 3]]
     end
 end
 
