@@ -53,7 +53,7 @@ module JSONTypes
         NULL => "NULL",
         NUMBER => "NUMBER",
     )
-    Base.show(io::IO, x::T) = print(io, "JSONTypes.", names[x])
+    Base.show(io::IO, x::T) = Base.print(io, "JSONTypes.", names[x])
     Base.isless(x::T, y::T) = UInt8(x) < UInt8(y)
 end
 

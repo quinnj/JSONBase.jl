@@ -167,11 +167,11 @@ function Base.show(io::IO, x::LazyValue)
         end
     elseif T == JSONTypes.STRING
         str, _ = applystring(nothing, x)
-        print(io, "JSONBase.LazyValue(", repr(tostring(String, str)), ")")
+        Base.print(io, "JSONBase.LazyValue(", repr(tostring(String, str)), ")")
     elseif T == JSONTypes.NULL
-        print(io, "JSONBase.LazyValue(nothing)")
+        Base.print(io, "JSONBase.LazyValue(nothing)")
     else
-        print(io, "JSONBase.LazyValue(", materialize(x), ")")
+        Base.print(io, "JSONBase.LazyValue(", materialize(x), ")")
     end
 end
 

@@ -173,4 +173,17 @@ JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
     @test JSONBase.json(UUID(typemax(UInt128)); style=CustomJSONStyle()) == "340282366920938463463374607431768211455"
     JSONBase.lower(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UInt128(val) : JSONBase.lower(val)
     @test JSONBase.json(N(0, UUID(typemax(UInt128))); style=CustomJSONStyle()) == "{\"id\":0,\"uuid\":340282366920938463463374607431768211455}"
+
+    @testset "pretty output" begin
+        @test JSONBase.json([1, 2, 3], pretty=true) == "[\n    1,\n    2,\n    3\n]"
+        @test JSONBase.json([1, 2, 3], pretty=2) == "[\n  1,\n  2,\n  3\n]"
+        @test JSONBase.json([1, 2, 3], pretty=0) == "[1,2,3]"
+        # empty object/array
+        @test JSONBase.json([], pretty=true) == "[]"
+        @test JSONBase.json(Dict(), pretty=true) == "{}"
+        # several levels of nesting
+        @test JSONBase.json([1, [2, 3], [4, [5, 6]]], pretty=2) == "[\n  1,\n  [\n    2,\n    3\n  ],\n  [\n    4,\n    [\n      5,\n      6\n    ]\n  ]\n]"
+        # several levels of nesting with a mix of nulls, numbers, strings, booleans, empty objects, arrays, etc.
+        @test JSONBase.json([1, [2, 3], [4, [5, 6]], nothing, "hey", 3.14, true, false, Dict(), []], pretty=2) == "[\n  1,\n  [\n    2,\n    3\n  ],\n  [\n    4,\n    [\n      5,\n      6\n    ]\n  ],\n  null,\n  \"hey\",\n  3.14,\n  true,\n  false,\n  {},\n  []\n]"
+    end
 end

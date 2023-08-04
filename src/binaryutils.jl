@@ -28,7 +28,7 @@ end
 
 Base.propertynames(::SizeMeta) = (:is_size_embedded, :embedded_size)
 
-Base.show(io::IO, x::SizeMeta) = print(io, "SizeMeta(is_size_embedded=", x.is_size_embedded, ", embedded_size=", Int(x.embedded_size), ")")
+Base.show(io::IO, x::SizeMeta) = Base.print(io, "SizeMeta(is_size_embedded=", x.is_size_embedded, ", embedded_size=", Int(x.embedded_size), ")")
 
 function SizeMeta(is_size_embedded::Bool, embedded_size::UInt8=0x00)
     if is_size_embedded
@@ -60,7 +60,7 @@ end
 
 Base.propertynames(::BinaryMeta) = (:type, :size)
 
-Base.show(io::IO, x::BinaryMeta) = print(io, "BinaryMeta(type=", x.type, ", size=", x.size, ")")
+Base.show(io::IO, x::BinaryMeta) = Base.print(io, "BinaryMeta(type=", x.type, ", size=", x.size, ")")
 
 function BinaryMeta(type::JSONTypes.T, size::SizeMeta=SizeMeta(true))
     return BinaryMeta(UInt8(type) | (UInt8(size) << 3))
@@ -135,10 +135,10 @@ function Base.show(io::IO, x::BinaryValue)
         end
     elseif T == JSONTypes.STRING
         str, _ = applystring(nothing, x)
-        print(io, "JSONBase.BinaryValue(", repr(tostring(String, str)), ")")
+        Base.print(io, "JSONBase.BinaryValue(", repr(tostring(String, str)), ")")
     elseif T == JSONTypes.NULL
-        print(io, "JSONBase.BinaryValue(nothing)")
+        Base.print(io, "JSONBase.BinaryValue(nothing)")
     else
-        print(io, "JSONBase.BinaryValue(", materialize(x), ")")
+        Base.print(io, "JSONBase.BinaryValue(", materialize(x), ")")
     end
 end

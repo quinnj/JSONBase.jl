@@ -29,6 +29,10 @@ If `allownan` is `true`, allow `Inf`, `-Inf`, and `NaN` in the output.
 If `allownan` is `false`, throw an error if `Inf`, `-Inf`, or `NaN` is encountered.
 `allownan` is `false` by default.
 
+Pretty printing of the JSON output is controlled via the `pretty` keyword argument. If `pretty` is `true`,
+the output will be pretty-printed with 4 spaces of indentation. If `pretty` is an integer, it will be used
+as the number of spaces of indentation. If `pretty` is `false` or `0`, the output will be compact (default behavior).
+
 By default, `x` must be a JSON-serializable object. Supported types include:
   * `AbstractString` => JSON string: types must support the `AbstractString` interface, specifically with support for
     `ncodeunits` and `codeunit(x, i)`.
@@ -64,21 +68,21 @@ and isn't conducive to recursive situations. Types should define an appropriate
 """
 function json end
 
-function json(io::IO, x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false) where {T}
+function json(io::IO, x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false, pretty::Union{Integer,Bool}=false) where {T}
     y = lower(style, x)
     buf = Vector{UInt8}(undef, sizeguess(y))
-    pos = json!(buf, 1, y, style, allownan, nothing)
+    pos = json!(buf, 1, y, style, allownan, nothing, pretty === true ? 4 : Int(pretty))
     return write(io, resize!(buf, pos - 1))
 end
 
-function json(x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false) where {T}
+function json(x; style::JSONStyle=DefaultStyle(), allownan::Bool=false, pretty::Union{Integer,Bool}=false)
     y = lower(style, x)
     buf = Base.StringVector(sizeguess(y))
-    pos = json!(buf, 1, y, style, allownan, nothing)
+    pos = json!(buf, 1, y, style, allownan, nothing, pretty === true ? 4 : Int(pretty))
     return String(resize!(buf, pos - 1))
 end
 
-function json(fname::String, obj::T; kw...) where {T}
+function json(fname::String, obj; kw...)
     open(fname, "w") do io
         json(io, obj; kw...)
     end
@@ -101,6 +105,8 @@ end
 struct WriteClosure{JS, arraylike, T} # T is the type of the parent object/array being written
     buf::Vector{UInt8}
     pos::Ptr{Int}
+    indent::Int
+    depth::Int
     style::JS
     allownan::Bool
     objids::Base.IdSet{Any} # to track circular references
@@ -123,15 +129,35 @@ end
     return ex
 end
 
+@inline function indent(buf, pos, ind, depth)
+    if ind > 0
+        n = ind * depth + 1
+        @checkn n
+        buf[pos] = UInt8('\n')
+        for i = 1:(n - 1)
+            buf[pos + i] = UInt8(' ')
+        end
+        pos += n
+    end
+    return pos
+end
+
 @inline function (f::WriteClosure{JS, arraylike, T})(key, val) where {JS, arraylike, T}
     pos = unsafe_load(f.pos)
     buf = f.buf
+    ind = f.indent
+    pos = indent(buf, pos, ind, f.depth)
     # if not an array, we need to write the key + ':'
     if !arraylike
         pos = _string(buf, pos, key)
         @checkn 1
         buf[pos] = UInt8(':')
         pos += 1
+        if ind > 0
+            @checkn 1
+            buf[pos] = UInt8(' ')
+            pos += 1
+        end
         lowered = lower(f.style, T, fieldsym(T, key), val)
     else
         lowered = lower(f.style, val)
@@ -141,7 +167,7 @@ end
         # if so, it's a circular reference! so we just write `null`
         pos = _null(buf, pos)
     else
-        pos = json!(buf, pos, lowered, f.style, f.allownan, f.objids)
+        pos = json!(buf, pos, lowered, f.style, f.allownan, f.objids, ind, f.depth)
     end
     @checkn 1
     buf[pos] = UInt8(',')
@@ -152,7 +178,7 @@ end
 end
 
 # assume x is lowered value
-function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing)
+function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing, ind::Int=0, depth::Int=0)
     # string
     if x isa AbstractString
         return _string(buf, pos, x)
@@ -204,7 +230,7 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, obj
         # use an IdSet to keep track of circular references
         objids = objids === nothing ? Base.IdSet{Any}() : objids
         push!(objids, x)
-        c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), style, allownan, objids)
+        c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), ind, depth + 1, style, allownan, objids)
         GC.@preserve ref API.applyeach(c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
@@ -212,6 +238,7 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, obj
         # so for non-empty object/arrays, we can just overwrite the last comma with the closechar
         if pos > pre_pos
             pos -= 1
+            pos = indent(buf, pos, ind, depth)
         else
             # but if the object/array was empty, we need to do the check manually
             @checkn 1
