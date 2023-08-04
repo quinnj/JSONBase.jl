@@ -197,7 +197,7 @@ struct BinaryNumberClosure{T}
 end
 
 @inline function (f::BinaryNumberClosure{T})(y::Y) where {T, Y}
-    i = _binary(y, f.tape, f.i, f.x, true)
+    i = _binary(y, f.tape, f.i, f.x)
     unsafe_store!(f.newi, i)
     return
 end
@@ -455,39 +455,29 @@ end
     return z, i
 end
 
-@inline function _binary(y::Integer, tape, i, x::LazyValue, trunc)
-    if trunc
-        # if truncating, we check what the smallest integer type
-        # is that can hold our value
-        if y <= typemax(Int8)
-            return writenumber(y % Int8, tape, i, x)
-        elseif y <= typemax(Int16)
-            return writenumber(y % Int16, tape, i, x)
-        elseif y <= typemax(Int32)
-            return writenumber(y % Int32, tape, i, x)
-        elseif y <= typemax(Int64)
-            return writenumber(y % Int64, tape, i, x)
-        elseif y <= typemax(Int128)
-            return writenumber(y % Int128, tape, i, x)
-        else
-            return writenumber(y, tape, i, x)
-        end
+@inline function _binary(y::Integer, tape, i, x::LazyValue)
+    if y <= typemax(Int8)
+        return writenumber(y % Int8, tape, i, x)
+    elseif y <= typemax(Int16)
+        return writenumber(y % Int16, tape, i, x)
+    elseif y <= typemax(Int32)
+        return writenumber(y % Int32, tape, i, x)
+    elseif y <= typemax(Int64)
+        return writenumber(y % Int64, tape, i, x)
+    elseif y <= typemax(Int128)
+        return writenumber(y % Int128, tape, i, x)
     else
         return writenumber(y, tape, i, x)
     end
 end
 
-@inline function _binary(y::AbstractFloat, tape, i, x::LazyValue, trunc)
-    if trunc
-        if Float16(y) == y
-            return writenumber(Float16(y), tape, i, x)
-        elseif Float32(y) == y
-            return writenumber(Float32(y), tape, i, x)
-        elseif Float64(y) == y
-            return writenumber(Float64(y), tape, i, x)
-        else
-            return writenumber(y, tape, i, x)
-        end
+@inline function _binary(y::AbstractFloat, tape, i, x::LazyValue)
+    if Float16(y) == y
+        return writenumber(Float16(y), tape, i, x)
+    elseif Float32(y) == y
+        return writenumber(Float32(y), tape, i, x)
+    elseif Float64(y) == y
+        return writenumber(Float64(y), tape, i, x)
     else
         return writenumber(y, tape, i, x)
     end

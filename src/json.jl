@@ -329,9 +329,7 @@ _split_sign(x::BigInt) = (abs(x), x < 0)
 
 @noinline infcheck(x, allownan) = isfinite(x) || allownan || throw(ArgumentError("$x not allowed to be written in JSON spec; pass `allownan=true` to allow anyway"))
 
-_number(buf, pos, x, allownan) = _number(buf, pos, convert(Float64, x), allownan)
-
-@inline function _number(buf, pos, x::Union{Integer, AbstractFloat}, allownan)
+@inline function _number(buf, pos, x::Real, allownan)
     if x isa Integer
         y, neg = _split_sign(x)
         n = i = ndigits(y, base=10, pad=1)

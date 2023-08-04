@@ -13,6 +13,12 @@ using Test, JSONBase
     # @test JSONBase.materialize(f("1f23")) === 1f23
     # @test JSONBase.materialize(f("1F23")) === 1f23
     @test JSONBase.materialize(f("100000000000000000000000")) === 100000000000000000000000
+    for T in (Int8, Int16, Int32, Int64, Int128)
+        @test JSONBase.materialize(f(string(T(1)))) == T(1)
+        @test JSONBase.materialize(f(string(T(-1)))) == T(-1)
+        @test JSONBase.materialize(f(string(T(1) << 100))) == T(1) << 100
+        @test JSONBase.materialize(f(string(T(-1) << 100))) == T(-1) << 100
+    end
 end
 
 @testset "Numbers tests 2: `$f`" for f in (JSONBase.lazy, JSONBase.binary)

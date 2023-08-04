@@ -21,6 +21,7 @@ module Selectors
 import ..API: applyeach, Continue, arraylike
 import ..PtrString
 import ..streq
+import ..LengthClosure
 
 export List
 
@@ -86,6 +87,8 @@ function _getindex(x, key::Union{KeyInd, Integer})
             if objectlike(item)
                 ret = _getindex(item, key)
                 if ret isa List
+                    # I dont' think this is possible
+                    # (that ret isa List), but just in case
                     append!(values, ret)
                 elseif !(ret isa Continue)
                     push!(values, ret)
@@ -208,6 +211,16 @@ function _propertynames(x)
     return nms
 end
 
+function _length(x)
+    selectioncheck(x)
+    ref = Ref(0)
+    lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
+    GC.@preserve ref begin
+        applyeach(lc, x)
+        return unsafe_load(lc.len)
+    end
+end
+
 macro selectors(T)
     esc(quote
         Base.getindex(x::$T, arg) = Selectors._getindex(x, arg)
@@ -216,6 +229,7 @@ macro selectors(T)
         Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(x, key)
         Base.propertynames(x::$T) = Selectors._propertynames(x)
         Base.hasproperty(x::$T, key::Symbol) = key in propertynames(x)
+        Base.length(x::$T) = Selectors._length(x)
     end)
 end
 
