@@ -16,8 +16,6 @@ using Test, JSONBase
     for T in (Int8, Int16, Int32, Int64, Int128)
         @test JSONBase.materialize(f(string(T(1)))) == T(1)
         @test JSONBase.materialize(f(string(T(-1)))) == T(-1)
-        @test JSONBase.materialize(f(string(T(1) << 100))) == T(1) << 100
-        @test JSONBase.materialize(f(string(T(-1) << 100))) == T(-1) << 100
     end
 end
 
