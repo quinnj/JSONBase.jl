@@ -62,13 +62,16 @@ Lazy values can be materialized via:
   * `JSONBase.materialize`: construct an instance of user-provided `T` from JSON
 """
 struct LazyValue{T}
-    buf::T
-    pos::Int
-    type::JSONTypes.T
+    buf::T # wrapped json source
+    pos::Int # byte position in buf where this value starts
+    type::JSONTypes.T # scoped enum for type of value: OBJECT, ARRAY, etc.
     opts::Options
 end
 
-# only used for showing LazyValue
+# convenience types only used for defining `show` on LazyValue
+# this allows, for example, a LazyValue w/ type OBJECT to be
+# displayed like a Dict using Base AbstractDict machinery
+# while a LazyValue w/ type ARRAY is displayed like an Array
 struct LazyObject{T} <: AbstractDict{String, LazyValue}
     buf::T
     pos::Int
@@ -159,7 +162,7 @@ function Base.show(io::IO, x::LazyValue)
         Base.print(io, "JSONBase.LazyValue(", repr(tostring(String, str)), ")")
     elseif T == JSONTypes.NULL
         Base.print(io, "JSONBase.LazyValue(nothing)")
-    else
+    else # bool/number
         Base.print(io, "JSONBase.LazyValue(", materialize(x), ")")
     end
 end
@@ -209,7 +212,7 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
 # `keyvalfunc` is provided a PtrString => LazyValue pair
 # to materialize the key, call `tostring(key)`
 # this is done automatically in selection syntax via `keyvaltostring` transformer
-# returns an Continue(pos) value that notes the next position where parsing should
+# returns a Continue(pos) value that notes the next position where parsing should
 # continue (selection syntax requires Continue to be returned from applyeach)
 @inline function applyobject(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
@@ -247,6 +250,7 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
         # updated `pos`, then we need to skip val ourselves
         pos = ret.pos == 0 ? skip(val) : ret.pos
         @nextbyte
+        # check for terminating conditions
         if b == UInt8('}')
             return Continue(pos + 1)
         elseif b != UInt8(',')
@@ -311,7 +315,7 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
 # `keyvalfunc` is provided a Int => LazyValue pair
 # applyeach always requires a key-value pair function
 # so we use the index as the key
-# returns an Continue(pos) value that notes the next position where parsing should
+# returns a Continue(pos) value that notes the next position where parsing should
 # continue (selection syntax requires Continue to be returned from applyeach)
 @inline function applyarray(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
@@ -423,6 +427,8 @@ _applynumber(f::F, x::LazyValue) where {F} = applynumber(f, x)
         valfunc(res.val)
         return pos + res.tlen
     else
+        # we pass `valfunc` along, which will be applied once
+        # the concrete type of number is inferred
         pos, code = Parsers.parsenumber(buf, pos, len, b, valfunc)
         if Parsers.invalid(code)
             error = InvalidNumber

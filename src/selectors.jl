@@ -11,8 +11,8 @@ This syntax mainly uses various forms of `getindex` to select elements of an obj
 Supported syntax includes:
   * `x["key"]` / `x.key` / `x[:key]` / `x[1]` - select the value associated for a key in object `x` (key can be a String, Symbol, or Integer for an array)
   * `x[:]` - select all values in object or array `x`, returned as a `Selectors.List`, which is a custom array type that supports the selection syntax
-  * `x.key` - when `x` is a `List`, select the value for key `key` in each element of the `List` (like a broadcasted `getindex`)
-  * `x[~, key]` - recursively select all values in object or array `x` that have a key `key`
+  * `x.key` - when `x` is a `List`, select the value for `key` in each element of the `List` (like a broadcasted `getindex`)
+  * `x[~, key]` - recursively select all values in object or array `x` that have `key`
   * `x[~, :]` - recursively select all values in object or array `x`, returned as a flattened `List`
   * `x[:, (k, v) -> Bool]` - apply a key-value function `f` to each key-value/index-value in object or array `x`, and return a `List` of all values for which `f` returns `true`
 """
@@ -201,6 +201,7 @@ end
 selectioncheck(x) = objectlike(x) || arraylike(x) || noselection(x)
 @noinline noselection(x) = throw(ArgumentError("Selection syntax not defined for: `$(typeof(x))))`"))
 
+# build up propertynames by iterating over each key-value pair
 function _propertynames(x)
     selectioncheck(x)
     nms = Symbol[]
@@ -211,6 +212,8 @@ function _propertynames(x)
     return nms
 end
 
+# compute "length" by iterating over each key-value pair
+# TODO: move to utils? combine w/ LazyObject/LazyArray definitions?
 function _length(x)
     selectioncheck(x)
     ref = Ref(0)
@@ -221,6 +224,7 @@ function _length(x)
     end
 end
 
+# convenience macro for defining high-level getindex/getproperty methods
 macro selectors(T)
     esc(quote
         Base.getindex(x::$T, arg) = Selectors._getindex(x, arg)

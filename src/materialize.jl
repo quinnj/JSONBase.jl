@@ -207,6 +207,7 @@ end
 # Note: when calling this method manually, we don't do the checkendpos check
 # which means if the input JSON has invalid trailing characters, no error will be thrown
 # we also don't do the lift of whatever is materialized to T (we're assuming that is done in valfunc)
+# choosetype should also have been called on T to ensure it's not a Union/abstract type
 @inline function materialize(valfunc::F, x::Values, ::Type{T}=Any, style::JSONStyle=DefaultStyle(), dicttype::Type{O}=Dict{String, Any}) where {F, T, O}
     JS = typeof(style)
     type = gettype(x)

@@ -17,6 +17,7 @@ include("utils.jl")
 include("interfaces.jl")
 using .API
 
+# TODO: why is this needed?
 function API.choosetype(::Type{T}, x) where {T}
   if T isa Union
       type = gettype(x)
@@ -29,8 +30,10 @@ function API.choosetype(::Type{T}, x) where {T}
   return T
 end
 
+# TODO: remove?
 pass(args...) = Continue(0)
 
+# TODO: document this, why, where is it used, move to utils.jl?
 struct LengthClosure
   len::Ptr{Int}
 end

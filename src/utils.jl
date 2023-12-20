@@ -28,7 +28,7 @@ withopts(opts; kw...) = Options(;
 
 const OPTIONS = Options()
 
-# scoped enum
+# hand-rolled scoped enum
 module JSONTypes
     primitive type T 8 end
     T(x::UInt8) = Base.bitcast(T, x)
@@ -41,7 +41,7 @@ module JSONTypes
     const FALSE = T(0x05)
     const TRUE = T(0x06)
     const NULL = T(0x07)
-    const NUMBER = T(0x08) # only used by LazyValue, BinaryValue uses INT or FLOAT
+    const NUMBER = T(0x08) # only used by LazyValue, BinaryValue uses more specific INT or FLOAT
     const names = Dict(
         OBJECT => "OBJECT",
         ARRAY => "ARRAY",
@@ -60,17 +60,21 @@ end
 getlength(buf::AbstractVector{UInt8}) = length(buf)
 getlength(buf::AbstractString) = sizeof(buf)
 
+# unchecked
 function getbyte(buf::AbstractVector{UInt8}, pos)
     @inbounds b = buf[pos]
     return b
 end
 
+# unchecked
 function getbyte(buf::AbstractString, pos)
     @inbounds b = codeunit(buf, pos)
     return b
 end
 
-# helper macro to get the next byte and if checkwh=true
+# helper macro to get the next byte from `buf` at index `pos`
+# checks if `pos` is greater than `len` and @goto invalid if so
+# if checkwh=true
 # to keep going until we get a non-whitespace byte
 macro nextbyte(checkwh=true)
     esc(quote
@@ -92,6 +96,7 @@ macro nextbyte(checkwh=true)
     end)
 end
 
+# string escape/unescape utilities
 function reverseescapechar(b)
     b == UInt8('"')  && return UInt8('"')
     b == UInt8('\\') && return UInt8('\\')
@@ -117,6 +122,7 @@ charvalue(b) = (UInt8('0') <= b <= UInt8('9')) ? b - UInt8('0') :
 
 _unsafe_string(p, len) = ccall(:jl_pchar_to_string, Ref{Base.String}, (Ptr{UInt8}, Int), p, len)
 
+# temporary string type to enable deferrment of string allocation in certain cases
 struct PtrString
     ptr::Ptr{UInt8}
     len::Int
@@ -133,6 +139,7 @@ conversion method that can avoid the `String` intermediate + allocation.
 """
 function tostring end
 
+# Base.String's overload of tostring
 @inline function tostring(::Type{String}, x::PtrString)
     if x.escaped
         str = Base.StringVector(x.len)
@@ -144,7 +151,7 @@ function tostring end
     end
 end
 
-# generic fallbacks
+# generic fallback
 tostring(::Type{T}, x::PtrString) where {T} = tostring(String, x)
 
 """

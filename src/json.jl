@@ -53,7 +53,7 @@ By default, `x` must be a JSON-serializable object. Supported types include:
 
 If an object is not JSON-serializable, an override for [`JSONBase.lower`](@ref) can
 be defined to convert it to a JSON-serializable object. Some default `lower` defintions
-are defined in JSONBase itself, like:
+are defined in JSONBase itself, for example:
   * `lower(::Missing) = nothing`
   * `lower(x::Symbol) = String(x)`
   * `lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)`
@@ -213,7 +213,7 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, obj
     # object or array
     else
         # it's notable that we're in an `else` block here; and that
-        # we don't actually call `objectlike` at all, but just assume
+        # we don't actually call something like `objectlike` at all, but just assume
         # anything else is an object/array
         # this allows us to have a `json` that "doesn't throw", which can
         # be a good property for production systems

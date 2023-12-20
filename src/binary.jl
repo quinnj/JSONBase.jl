@@ -8,7 +8,8 @@ No references to the original JSON input are kept, and the binary
 
 This binary format can be particularly efficient as a materialization vs.
 a generic representation (e.g. `Dict`, `Array`, etc.) when the JSON
-has deeply nested structures.
+has deeply nested structures, since the binary format is "flattened"
+and avoids the need to allocate intermediate nested objects.
 
 A [`BinaryValue`](@ref) is returned that supports the "selection" syntax,
 similar to LazyValue. The `BinaryValue` can also be materialized via:
@@ -77,9 +78,10 @@ is an integer or a float, and the number of bytes needed to encode
 the number. Integers and floats are truncated to the smallest # of bytes
 necessary to represent the value. For example, the number `1.0` is
 encoded as a `Float16` (2 bytes), while the number `1` is encoded as
-an `Int8` (1 byte). Note, however, that to reduce the total # of _output_
+an `Int8` (1 byte). Note, however, that to reduce the total # of fully materialized
 types, integers will always be materialized as `Int64`, `Int128`, or `BigInt`,
-while floats will be materialized as `Float64` or `BigFloat`.
+while floats will be materialized as `Float64` or `BigFloat`. The compressed
+types are solely for the internal binary type representation.
 `BigInt` and `BigFloat` use gmp/mpfr-specific library calls to encode
 their values as strings in the binary tape and similarly to deserialize.
 
@@ -227,6 +229,7 @@ end
         _writenumber(i % Int32, tape, tape_i)
         c = BinaryObjectClosure(tape, x, tape_i, tape_nfields)
         pos = applyobject(c, x).pos
+        # we've now recursively serialized all the object key/value fields
         # compute SizeMeta, even though we write nfields unconditionally
         _, sm = sizemeta(0)
         # note: we pre-@checked earlier by leaving a slot for our BM byte

@@ -7,14 +7,15 @@ export applyeach, Continue, fields, mutable, kwdef,
        JSONStyle, DefaultStyle, lower, lift, choosetype, arraylike
 
 """
-    JSONBase.applyeach(f, x)
+    JSONBase.applyeach(f, x) -> Union{JSONBase.Continue, T}
 
 A custom `foreach`-like function that operates specifically on `(key, val)` or `(ind, val)` pairs,
-supports short-circuiting, and can return an updated state via `JSONBase.Continue`.
+supports short-circuiting, and can maintain/return updated state via `JSONBase.Continue`.
+
 For each key-value or index-value pair in `x`, call `f(k, v)`.
-If `f` doesn't return an `JSONBase.Continue` instance, `applyeach` should
-return the non-`Continue` value immediately and stop iterating.
-`applyeach` should return `JSONBase.Continue` once iterating is complete.
+If `f` doesn't return a `JSONBase.Continue` instance, `applyeach` should
+return the non-`Continue` value immediately and stop iterating (i.e. short-circuit).
+`applyeach` should return `JSONBase.Continue` once iterating `x` is complete.
 
 An example overload of `applyeach` for a generic iterable would be:
 
@@ -82,17 +83,17 @@ Specifically, the "mutable" strategy requires that a type support:
   * `T()`: construction with a no-arg constructor
   * `setproperty!(x, name, value)`: when JSON object keys are found that match a property name, the value is set via `setproperty!`
 
-To add support for the "mutable" strategy for a custom type `MyType` the definition would be:
+To add support for the "mutable" strategy for a custom type `MyType`, the definition would be:
 
 ```julia
 JSONBase.mutable(::Type{<:MyType}) = true
 ```
 
 Note this definition works whether `MyType` has type parameters or not due to being defined
-for *any* `MyType`.
+for `MyType` and any subtypes.
 
-For fieldnames of `T` that don't have a different JSON object key, [`JSONBase.fields`](@ref)
-can be used to map between fieldname and JSON key.
+For fieldnames of `T` that expect a non-lexically matching JSON object key, [`JSONBase.fields`](@ref)
+can be used to map between fieldname and JSON key name.
 """
 mutable(_) = false
 
@@ -105,7 +106,7 @@ Overloadable method that indicates whether a type `T` supports the
 Specifically, the "keyword arg" strategy requires that a type support:
   * `T(; keyvals...)`: construction by passing a collection of key-value pairs
     as keyword arguments to the type constructor; this kind of constructor is
-    defined automatically when `@kwdef` is used to define a type
+    defined automatically when the `@kwdef` macro is used to define a type
 
 To add support for the "keyword arg" strategy for a custom type `MyType` the definition would be:
 
@@ -114,10 +115,10 @@ JSONBase.kwdef(::Type{<:MyType}) = true
 ```
 
 Note this definition works whether `MyType` has type parameters or not due to being defined
-for *any* `MyType`.
+for `MyType` and any subtypes.
 
-For fieldnames of `T` that don't have a different JSON object key, [`JSONBase.fields`](@ref)
-can be used to map between fieldname and JSON key.
+For fieldnames of `T` that expect a non-lexically matching JSON object key, [`JSONBase.fields`](@ref)
+can be used to map between fieldname and JSON key name.
 """
 kwdef(_) = false
 
@@ -127,7 +128,7 @@ kwdef(_) = false
 Overloadable method that indicates whether a type `T` supports the
 "dictlike" strategy for construction via `JSONBase.materialize`, which
 doesn't do any field matching like the `mutable`, `kwdef`, or `struct`
-strategies, but instead just slurps up all key-value pairs into `T`
+strategies, but instead slurps all key-value pairs into `T`
 like a `Dict` or `Vector{Pair}`.
 
 Specifically, the "dictlike" strategy requires that a type support:
@@ -143,7 +144,8 @@ To add support for the "dictlike" strategy for a custom type `MyType` the defini
 JSONBase.dictlike(::Type{<:MyType}) = true
 ```
 
-Note this definition works whether `MyType` has type parameters or not due to being defined.
+Note this definition works whether `MyType` has type parameters or not due to being defined
+for `MyType` and any subtypes.
 """
 function dictlike end
 
@@ -151,6 +153,7 @@ dictlike(::Type{<:AbstractDict}) = true
 dictlike(::Type{<:AbstractVector{<:Pair}}) = true
 dictlike(_) = false
 
+# Note: we could expose this as part of the dictlike API
 addkeyval!(d::AbstractDict, k, v) = d[k] = v
 addkeyval!(d::AbstractVector, k, v) = push!(d, k => v)
 
@@ -167,11 +170,13 @@ allows defining a custom struct subtype like `struct CustomJSONSTyle <: JSONBase
 and then passing to `JSONBase.json` or `JSONBase.materialize` where calls to [`JSONBase.lower`](@ref)
 and [`JSONBase.lift`](@ref) will receive the custom style as a 1st argument. This allows defining
 `lower`/`lift` methods on non-owned types without pirating default method definition or affecting other
-possible style overrides.
+possible style overrides. This ultimately allows complete, flexible control over serialization and
+deserialization of any type, owned or not.
 
 # Example
 
 ```julia
+# custom styles must subtype the abstract type `JSONBase.JSONStyle`
 struct CustomJSONStyle <: JSONBase.JSONStyle end
 
 struct N
@@ -182,8 +187,13 @@ end
 # override default UUID serialization behavior (write out as a number instead of a string)
 JSONBase.lower(::CustomJSONStyle, x::UUID) = UInt128(x)
 
+# default serialization is unaffected by new style definition
+JSONBase.json(UUID(typemax(UInt128)))
+# "\"ffffffff-ffff-ffff-ffff-ffffffffffff\""
+
+# must pass custom style to override default behavior
 JSONBase.json(UUID(typemax(UInt128)); style=CustomJSONStyle())
-# "340282366920938463463374607431768211455"
+# "340282366920938463463374607431768211455" # written as unquoted number instead of default UUID serialization as a string
 
 # override the UUID serialization behavior only for our N struct
 JSONBase.lower(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UInt128(val) : JSONBase.lower(val)
@@ -236,6 +246,7 @@ struct Person
 end
 
 # we want to serialize the birthdate as a string with a non-default date format
+# note for non-:birthdate fields, we call `lower(val)` to get the default lowering
 JSONBase.lower(::Type{Person}, key, val) = key == :birthdate ? Dates.format(val, dateformat"mm/dd/yyyy") : lower(val)
 ```
 """
@@ -312,6 +323,7 @@ lift(::JSONStyle, ::Type{T}, key, val) where {T} = lift(T, key, val)
 # some default lift definitions for common types
 lift(::Type{T}, ::Nothing) where {T >: Missing} = T === Any ? nothing : missing
 lift(::Type{T}, x::String) where {T <: Union{VersionNumber, UUID, Dates.TimeType, Regex}} = T(x)
+
 # bit of an odd case, but support 0-dimensional array lifting from scalar value
 function lift(::Type{A}, x) where {A <: AbstractArray{T, 0}} where {T}
     m = A(undef)
@@ -333,14 +345,12 @@ end
     JSONBase.choosetype(::JSONStyle, T, x) -> S
     JSONBase.choosetype(::JSONStyle, T, key, FT, val) -> S
 
-Interface to allow "choosing" the right type for materialization
+Interface to allow "choosing" the right type `S` for materialization
 in cases where it would otherwise be ambiguous or unknown.
 The type `T` is the abstact or Union type we want to disambiguate.
 `x` is a `JSONBase.LazyValue` or `JSONBase.BinaryValue` where fields
-can be accessed using the selection syntax. The type of the JSON
-value can also be inspected via `JSONBase.gettype(x)`. The JSON
-type and field values can be used to provide the materialization
-operation a more concrete or specific type to use for materializing.
+can be accessed using the selection syntax. `S` is the more specific type
+to be deserialized based on the "runtime" JSON values.
 
 The 2nd method allows overloading `choosetype` on a parent type `T` for a specific
 field where the `key` is the field name (as a Symbol), `FT` is the field type,
@@ -396,7 +406,7 @@ Overloadable method that allows a type `T` to be treated as an array
 when being serialized to JSON via `JSONBase.json`.
 Types overloading `arraylike`, must also overload `JSONBase.applyeach`.
 Note that default `applyeach` implementations exist for `AbstractArray`,
-`AbstractSet`.
+and `AbstractSet`.
 
 An example of overloading this method for a custom type `MyType` looks like:
 
