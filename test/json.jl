@@ -126,7 +126,7 @@ end
     # SimpleVector writing
     @test JSONBase.json(Core.svec(1, 2, 3)) == "[1,2,3]"
     # Ptr writing
-    @test JSONBase.json(C_NULL) == "\"Ptr{Nothing} @0x0000000000000000\""
+    sizeof(Int) == 8 && @test JSONBase.json(C_NULL) == "\"Ptr{Nothing} @0x0000000000000000\""
     # DataType writing
     @test JSONBase.json(Float64) == "\"Float64\""
     @test JSONBase.json(Union{Missing, Float64}) == "\"Union{Missing, Float64}\""
