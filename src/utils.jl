@@ -1,5 +1,12 @@
 macro constfield(ex) esc(VERSION >= v"1.8-" ? Expr(:const, ex) : ex) end
 
+# helper accessors
+getbuf(x) = getfield(x, :buf)
+getpos(x) = getfield(x, :pos)
+gettape(x) = getfield(x, :tape)
+gettype(x) = getfield(x, :type)
+getopts(x) = getfield(x, :opts)
+
 @enum Error InvalidJSON UnexpectedEOF ExpectedOpeningObjectChar ExpectedOpeningQuoteChar ExpectedOpeningArrayChar ExpectedClosingArrayChar ExpectedComma ExpectedColon ExpectedNewline InvalidChar InvalidNumber
 
 @noinline invalid(error, buf, pos, T) = throw(ArgumentError("""
@@ -189,6 +196,11 @@ function streq(x::PtrString, y::AbstractString)
 end
 
 streq(x::PtrString, y::PtrString) = x.len == y.len && ccall(:memcmp, Cint, (Ptr{UInt8}, Ptr{UInt8}, Csize_t), x.ptr, y.ptr, x.len) == 0
+
+# a helper higher-order function that converts an
+# API.applyeach function that operates potentially on a
+# PtrString to one that operates on a String
+keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
 
 # unsafe because we're not checking that src or dst are valid pointers
 # NOR are we checking that up to `n` bytes after dst are also valid to write to

@@ -62,6 +62,25 @@ end
 
 @inline (f::ConvertClosure{JS, T})(x) where {JS, T} = setfield!(f, :x, lift(f.style, T, x))
 
+# in `materialize`, given an initial LazyValue/BinaryValue
+# and a possible Union or abstract type `T`, we want to
+# concretize to a more specific type based on runtime values in `x`
+# `choosetype` can be overloaded for custom scenarios, but by default
+# we can at least cover the case where `T` is a Union
+# and `x` is an object, array, or string and strip away any
+# `Nothing` or `Missing` types (very common Union types)
+function API.choosetype(::Type{T}, x) where {T}
+    if T isa Union
+        type = gettype(x)
+        if type == JSONTypes.OBJECT ||
+            type == JSONTypes.ARRAY ||
+            type == JSONTypes.STRING
+            return non_nothing_missing_type(T)
+        end
+    end
+    return T
+end
+
 @inline function materialize(x::LazyValue, ::Type{T}=Any; style::JSONStyle=DefaultStyle(), dicttype::Type{O}=Dict{String, Any}) where {T, O}
     y = ConvertClosure{T}(style)
     pos = materialize(y, x, choosetype(style, T, x), style, O)
