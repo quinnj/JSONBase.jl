@@ -245,7 +245,7 @@ end
     @test JSONBase.materialize("""{"type": "car","make": "Mercedes-Benz","model": "S500","seatingCapacity": 5,"topSpeed": 250.1}""", Vehicle) == Car("car", "Mercedes-Benz", "S500", 5, 250.1)
     @test JSONBase.materialize("""{"type": "truck","make": "Isuzu","model": "NQR","payloadCapacity": 7500.5}""", Vehicle) == Truck("truck", "Isuzu", "NQR", 7500.5)
     # union
-    @test JSONBase.materialize("""{"id": 1, "name": "2", "rate": 3}""", J) == J(1, "2", 3)
+    @test JSONBase.materialize("""{"id": 1, "name": "2", "rate": 3}""", J) == J(1, "2", Int64(3))
     @test JSONBase.materialize("""{"id": null, "name": null, "rate": 3.14}""", J) == J(nothing, nothing, 3.14)
     # test K
     @test JSONBase.materialize("""{"id": 1, "value": null}""", K) == K(1, missing)
