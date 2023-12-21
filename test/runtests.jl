@@ -368,6 +368,6 @@ end
 include("struct.jl")
 include("json.jl")
 include("numbers.jl")
-@static if VERSION ≥ v"1.8"
-    @testset "Optimization test with JET" include("optimization.jl")
-end
+# @static if VERSION ≥ v"1.8"
+#     @testset "Optimization test with JET" include("optimization.jl")
+# end

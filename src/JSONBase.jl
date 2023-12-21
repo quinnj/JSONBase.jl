@@ -17,7 +17,13 @@ include("utils.jl")
 include("interfaces.jl")
 using .API
 
-# TODO: why is this needed?
+# in `materialize`, given an initial LazyValue/BinaryValue
+# and a possible Union or abstract type `T`, we want to
+# concretize to a more specific type based on runtime values in `x`
+# `choosetype` can be overloaded for custom scenarios, but by default
+# we can at least cover the case where `T` is a Union
+# and `x` is an object, array, or string and strip away any
+# `Nothing` or `Missing` types (very common Union types)
 function API.choosetype(::Type{T}, x) where {T}
   if T isa Union
       type = gettype(x)
@@ -30,10 +36,8 @@ function API.choosetype(::Type{T}, x) where {T}
   return T
 end
 
-# TODO: remove?
 pass(args...) = Continue(0)
 
-# TODO: document this, why, where is it used, move to utils.jl?
 struct LengthClosure
   len::Ptr{Int}
 end
@@ -55,70 +59,6 @@ const Values = Union{LazyValue, BinaryValue}
 
 include("materialize.jl")
 include("json.jl")
-
-# HACK to avoid inference recursion limit and the de-optimization:
-# This works since know the inference recursion will terminate due to the fact that this
-# method is only called when materializing a struct with definite number of fields, i.e.
-# that is not self-referencing, so it is guaranteed that there are no cycles in a recursive
-# `materialize` call. Especially, the `fieldcount` call in the struct fallback case within
-# the `materialize` should have errored for this case.
-# TODO we should revisit this hack when we start to support https://github.com/quinnj/JSONBase.jl/issues/3
-function validate_recursion_relation_sig(f, nargs::Int, sig)
-    @nospecialize f sig
-    sig = Base.unwrap_unionall(sig)
-    @assert sig isa DataType "unexpected `recursion_relation` call"
-    @assert sig.name === Tuple.name "unexpected `recursion_relation` call"
-    @assert length(sig.parameters) == nargs "unexpected `recursion_relation` call"
-    @assert sig.parameters[1] == typeof(f) "unexpected `recursion_relation` call"
-    return sig
-end
-@static if hasfield(Method, :recursion_relation)
-    let applyobject_recursion_relation = function (
-            method::Method, topmost::Union{Nothing,Method},
-            @nospecialize(sig), @nospecialize(topmostsig))
-            # Core.println("applyobject")
-            # Core.println("  method = ", method)
-            # Core.println("  topmost = ", topmost)
-            # Core.println("  sig = ", sig)
-            # Core.println("  topmostsig = ", topmostsig)
-            sig = validate_recursion_relation_sig(applyobject, 3, sig)
-            topmostsig = validate_recursion_relation_sig(applyobject, 3, topmostsig)
-            return sig.parameters[2] ≠ topmostsig.parameters[2]
-        end
-        method = only(methods(applyobject, (Any,LazyValues,)))
-        method.recursion_relation = applyobject_recursion_relation
-    end
-    let applyfield_recursion_relation = function (
-            method::Method, topmost::Union{Nothing,Method},
-            @nospecialize(sig), @nospecialize(topmostsig))
-            # Core.println("applyfield")
-            # Core.println("  method = ", method)
-            # Core.println("  topmost = ", topmost)
-            # Core.println("  sig = ", sig)
-            # Core.println("  topmostsig = ", topmostsig)
-            sig = validate_recursion_relation_sig(applyfield, 6, sig)
-            topmostsig = validate_recursion_relation_sig(applyfield, 6, topmostsig)
-            return sig.parameters[2] ≠ topmostsig.parameters[2]
-        end
-        method = only(methods(applyfield, (Type,Type,Any,Any,Any)))
-        method.recursion_relation = applyfield_recursion_relation
-    end
-    let _materialize_recursion_relation = function (
-            method::Method, topmost::Union{Nothing,Method},
-            @nospecialize(sig), @nospecialize(topmostsig))
-            # Core.println("_materialize")
-            # Core.println("  method = ", method)
-            # Core.println("  topmost = ", topmost)
-            # Core.println("  sig = ", sig)
-            # Core.println("  topmostsig = ", topmostsig)
-            sig = validate_recursion_relation_sig(_materialize, 5, sig)
-            topmostsig = validate_recursion_relation_sig(_materialize, 5, topmostsig)
-            return sig.parameters[4] ≠ topmostsig.parameters[4]
-        end
-        method = only(methods(_materialize, (Any,LazyValue,Type,Type)))
-        method.recursion_relation = _materialize_recursion_relation
-    end
-end
 
 # a helper higher-order function that converts an
 # API.applyeach function that operates potentially on a
@@ -151,6 +91,70 @@ parsefile(file; kw...) = materialize(open(file); kw...)
 print(io::IO, obj, indent=nothing) = json(io, obj; pretty=something(indent, 0))
 print(a, indent=nothing) = print(stdout, a, indent)
 json(a, indent::Integer) = json(a; pretty=indent)
+
+# HACK to avoid inference recursion limit and the de-optimization:
+# This works since know the inference recursion will terminate due to the fact that this
+# method is only called when materializing a struct with definite number of fields, i.e.
+# that is not self-referencing, so it is guaranteed that there are no cycles in a recursive
+# `materialize` call. Especially, the `fieldcount` call in the struct fallback case within
+# the `materialize` should have errored for this case.
+# TODO we should revisit this hack when we start to support https://github.com/quinnj/JSONBase.jl/issues/3
+function validate_recursion_relation_sig(f, nargs::Int, sig)
+  @nospecialize f sig
+  sig = Base.unwrap_unionall(sig)
+  @assert sig isa DataType "unexpected `recursion_relation` call"
+  @assert sig.name === Tuple.name "unexpected `recursion_relation` call"
+  @assert length(sig.parameters) == nargs "unexpected `recursion_relation` call"
+  @assert sig.parameters[1] == typeof(f) "unexpected `recursion_relation` call"
+  return sig
+end
+@static if hasfield(Method, :recursion_relation)
+  let applyobject_recursion_relation = function (
+          method::Method, topmost::Union{Nothing,Method},
+          @nospecialize(sig), @nospecialize(topmostsig))
+          # Core.println("applyobject")
+          # Core.println("  method = ", method)
+          # Core.println("  topmost = ", topmost)
+          # Core.println("  sig = ", sig)
+          # Core.println("  topmostsig = ", topmostsig)
+          sig = validate_recursion_relation_sig(applyobject, 3, sig)
+          topmostsig = validate_recursion_relation_sig(applyobject, 3, topmostsig)
+          return sig.parameters[2] ≠ topmostsig.parameters[2]
+      end
+      method = only(methods(applyobject, (Any,LazyValue,)))
+      method.recursion_relation = applyobject_recursion_relation
+  end
+  let applyfield_recursion_relation = function (
+          method::Method, topmost::Union{Nothing,Method},
+          @nospecialize(sig), @nospecialize(topmostsig))
+          # Core.println("applyfield")
+          # Core.println("  method = ", method)
+          # Core.println("  topmost = ", topmost)
+          # Core.println("  sig = ", sig)
+          # Core.println("  topmostsig = ", topmostsig)
+          sig = validate_recursion_relation_sig(applyfield, 7, sig)
+          topmostsig = validate_recursion_relation_sig(applyfield, 7, topmostsig)
+          return sig.parameters[2] ≠ topmostsig.parameters[2]
+      end
+      method = only(methods(applyfield, (Type,Any,Type,Any,Any,Any)))
+      method.recursion_relation = applyfield_recursion_relation
+  end
+  let _materialize_recursion_relation = function (
+          method::Method, topmost::Union{Nothing,Method},
+          @nospecialize(sig), @nospecialize(topmostsig))
+          # Core.println("_materialize")
+          # Core.println("  method = ", method)
+          # Core.println("  topmost = ", topmost)
+          # Core.println("  sig = ", sig)
+          # Core.println("  topmostsig = ", topmostsig)
+          sig = validate_recursion_relation_sig(_materialize, 6, sig)
+          topmostsig = validate_recursion_relation_sig(_materialize, 6, topmostsig)
+          return sig.parameters[4] ≠ topmostsig.parameters[4]
+      end
+      method = only(methods(_materialize, (Any,LazyValue,Type,Any,Type)))
+      method.recursion_relation = _materialize_recursion_relation
+  end
+end
 
 end # module
 
