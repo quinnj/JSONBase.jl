@@ -179,20 +179,20 @@ end
     elseif b == UInt8('"')
         return LazyValue(buf, pos, JSONTypes.STRING, opts)
     elseif b == UInt8('n') && pos + 3 <= len &&
-        getbyte(buf,pos + 1) == UInt8('u') &&
-        getbyte(buf,pos + 2) == UInt8('l') &&
-        getbyte(buf,pos + 3) == UInt8('l')
+        getbyte(buf, pos + 1) == UInt8('u') &&
+        getbyte(buf, pos + 2) == UInt8('l') &&
+        getbyte(buf, pos + 3) == UInt8('l')
         return LazyValue(buf, pos, JSONTypes.NULL, opts)
     elseif b == UInt8('t') && pos + 3 <= len &&
-        getbyte(buf,pos + 1) == UInt8('r') &&
-        getbyte(buf,pos + 2) == UInt8('u') &&
-        getbyte(buf,pos + 3) == UInt8('e')
+        getbyte(buf, pos + 1) == UInt8('r') &&
+        getbyte(buf, pos + 2) == UInt8('u') &&
+        getbyte(buf, pos + 3) == UInt8('e')
         return LazyValue(buf, pos, JSONTypes.TRUE, opts)
     elseif b == UInt8('f') && pos + 4 <= len &&
-        getbyte(buf,pos + 1) == UInt8('a') &&
-        getbyte(buf,pos + 2) == UInt8('l') &&
-        getbyte(buf,pos + 3) == UInt8('s') &&
-        getbyte(buf,pos + 4) == UInt8('e')
+        getbyte(buf, pos + 1) == UInt8('a') &&
+        getbyte(buf, pos + 2) == UInt8('l') &&
+        getbyte(buf, pos + 3) == UInt8('s') &&
+        getbyte(buf, pos + 4) == UInt8('e')
         return LazyValue(buf, pos, JSONTypes.FALSE, opts)
     elseif b == UInt8('-') || (UInt8('0') <= b <= UInt8('9')) || (opts.float64 && (b == UInt8('N') || b == UInt8('I') || b == UInt8('+')))
         return LazyValue(buf, pos, JSONTypes.NUMBER, opts)

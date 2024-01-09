@@ -45,6 +45,8 @@ By default, `x` must be a JSON-serializable object. Supported types include:
      are output as JSON arrays. `arraylike` is defined by default for
     `AbstractArray`, `AbstractSet`, `Tuple`, and `Base.Generator`. For other types that define,
     they must also properly implement [`JSONBase.applyeach`](@ref) to iterate over the index => elements pairs.
+    Note that arrays with dimensionality > 1 are written as nested arrays, with `N` nestings for `N` dimensions,
+    and the 1st dimension is always the innermost nested JSON array.
   * `AbstractDict`/`NamedTuple`/structs => JSON object: if a value doesn't fall into any of the above categories,
     it is output as a JSON object. [`JSONBase.applyeach`](@ref) is called, which has appropriate implementations
     for `AbstractDict`, `NamedTuple`, and structs, where field names => values are iterated over. Field names can

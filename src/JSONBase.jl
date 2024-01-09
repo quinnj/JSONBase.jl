@@ -57,8 +57,13 @@ include("json.jl")
 # convenience aliases for pre-1.0 JSON compat
 parse(source; kw...) = materialize(source; kw...)
 parsefile(file; kw...) = materialize(open(file); kw...)
+@doc (@doc materialize) parse
+@doc (@doc materialize) parsefile
+
 print(io::IO, obj, indent=nothing) = json(io, obj; pretty=something(indent, 0))
 print(a, indent=nothing) = print(stdout, a, indent)
+@doc (@doc json) print
+
 json(a, indent::Integer) = json(a; pretty=indent)
 
 # HACK to avoid inference recursion limit and the de-optimization:

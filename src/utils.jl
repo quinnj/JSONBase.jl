@@ -81,8 +81,7 @@ end
 
 # helper macro to get the next byte from `buf` at index `pos`
 # checks if `pos` is greater than `len` and @goto invalid if so
-# if checkwh=true
-# to keep going until we get a non-whitespace byte
+# if checkwh=true keep going until we get a non-whitespace byte
 macro nextbyte(checkwh=true)
     esc(quote
         if pos > len

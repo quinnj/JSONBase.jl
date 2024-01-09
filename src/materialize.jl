@@ -1,8 +1,9 @@
 #TODO: add examples to docs
-#TODO: mention how Matrix work when materializing
 """
     JSONBase.materialize(json)
     JSONBase.materialize(json, T)
+    JSONBase.parse(json)
+    JSONBase.parsefile(filename)
 
 Materialize a JSON input (string, vector, stream, LazyValue, BinaryValue, etc.) into a generic
 Julia representation (Dict, Array, etc.) (1st method), or construct an instance of type `T` from JSON input (2nd method).
@@ -21,6 +22,18 @@ When a type `T` is given for materialization, there are 3 construction "strategi
   * Default: an instance is constructed by passing `T(val1, val2, ...)` to the type constructor;
     values are matched on JSON object keys to field names; this corresponds to the "default" constructor
     structs have in Julia
+
+For the unique case of nested JSON arrays and prior knowledge of the expected dimensionality,
+a target type `T` can be given as an `AbstractArray{T, N}` subtype. In this case, the JSON array data is materialized as an
+n-dimensional array, where: the number of JSON array nestings must match the Julia array dimensionality (`N`),
+nested JSON arrays at matching depths are assumed to have equal lengths, and the length of
+the innermost JSON array is the 1st dimension length and so on. For example, the JSON array `[[[1.0,2.0]]]`
+would be materialized as a 3-dimensional array of `Float64` with sizes `(2, 1, 1)`, when called
+like `JSONBase.materialize("[[[1.0,2.0]]]", Array{Float64, 3})`. Note that n-dimensional Julia
+arrays are written to json as nested JSON arrays by default, to enable lossless materialization,
+though the dimensionality must still be provided to the call to `materialize`.
+
+For materializing JSON into an existing object, see [`materialize!`](@ref).
 
 Currently supported keyword arguments include:
   * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float;
@@ -224,7 +237,7 @@ function _materialize(valfunc::F, x::Values, ::Type{T}=Any, style::JSONStyle=Def
 end
 
 # Note: when calling this method manually, we don't do the checkendpos check
-# which means if the input JSON has invalid trailing characters, no error will be thrown
+# which means if the input JSON has invalid trailing characters, no error will be thrown here
 # we also don't do the lift of whatever is materialized to T (we're assuming that is done in valfunc)
 # choosetype should also have been called on T to ensure it's not a Union/abstract type
 @inline function materialize(valfunc::F, x::Values, ::Type{T}=Any, style::JSONStyle=DefaultStyle(), dicttype::Type{O}=Dict{String, Any}) where {F, T, O}
@@ -279,7 +292,7 @@ end
             dims = discover_dims(x)
             m = T(undef, dims)
             n = ndims(m)
-            # now we do the actual parsing to fill in our matrix
+            # now we do the actual parsing to fill in our n-dimensional array
             cont = applyarray(MultiDimClosure{JS, typeof(m), T}(style, m, ones(n), Ref(n)), x)
             valfunc(m)
             return cont.pos
@@ -342,6 +355,7 @@ end
         ftype = fieldtype(T, i)
         # performance note: this is the main reason this is a generated function and not
         # a macro unrolling fields: we want the field name as a String w/o paying a runtime cost
+        # if the runtime can do that statically at some point, we could un-generate this function
         str = String(fname)
         push!(ex.args, quote
             field = get(fds, $(Meta.quot(fname)), nothing)
