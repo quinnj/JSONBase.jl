@@ -259,9 +259,9 @@ end
             return pos
         elseif mutable(T)
             y = T()
-            pos = materialize!(x, y, style, O)
+            cont = materialize!(x, y, style, O)
             valfunc(y)
-            return pos
+            return cont.pos
         elseif kwdef(T)
             kws = Pair{Symbol, Any}[]
             c = KwClosure{JS, T, O}(style, kws)
@@ -307,9 +307,9 @@ end
             # and the default constructor is used with positional arguments from the json array
             if mutable(T)
                 y = T()
-                pos = materialize!(x, y, style, O)
+                cont = materialize!(x, y, style, O)
                 valfunc(y)
-                return pos
+                return cont.pos
             elseif kwdef(T)
                 kws = Pair{Symbol, Any}[]
                 c = KwIndexClosure{JS, T, O}(style, kws)
@@ -321,7 +321,8 @@ end
                 A = Vector{Any}
                 a = initarray(A)
                 pos = applyarray(GenericArrayClosure{JS, A, O}(style, a), x).pos
-                valfunc(T(a...))
+                constructor = T <: Tuple ? tuple : T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
+                valfunc(constructor(a...))
                 return pos
             end
         end
@@ -497,16 +498,16 @@ function materialize!(x::Values, y::T, style::JSONStyle=DefaultStyle(), dicttype
     if type == JSONTypes.OBJECT
         if dictlike(T)
             goc = GenericObjectClosure{JS, T, O}(style, y)
-            return applyobject(goc, x).pos
+            return applyobject(goc, x)
         else
             mc = MutableClosure{JS, T, O}(style, y)
-            return applyobject(mc, x).pos
+            return applyobject(mc, x)
         end
     elseif type == JSONTypes.ARRAY
         # the JSON source is an array, so we're going to
         # apply each element to `y` in order, assuming each array element is the right field
         # for y in corresponding field index order
-        return applyarray(MutableIndexClosure{JS, T, O}(style, y), x).pos
+        return applyarray(MutableIndexClosure{JS, T, O}(style, y), x)
     else
         throw(ArgumentError("cannot materialize! from a non-object/array JSON instance"))
     end

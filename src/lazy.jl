@@ -234,7 +234,7 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
     end
     while true
         # applystring returns key as a PtrString
-        key, pos = applystring(nothing, LazyValue(buf, pos, JSONTypes.STRING, getopts(x)))
+        key, pos = applystring(nothing, LazyValue(buf, pos, JSONTypes.STRING, getopts(x), false))
         @nextbyte
         if b != UInt8(':')
             error = ExpectedColon
