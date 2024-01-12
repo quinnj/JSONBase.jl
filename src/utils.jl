@@ -6,6 +6,7 @@ getpos(x) = getfield(x, :pos)
 gettape(x) = getfield(x, :tape)
 gettype(x) = getfield(x, :type)
 getopts(x) = getfield(x, :opts)
+getisroot(x) = getfield(x, :isroot)
 
 @enum Error InvalidJSON UnexpectedEOF ExpectedOpeningObjectChar ExpectedOpeningQuoteChar ExpectedOpeningArrayChar ExpectedClosingArrayChar ExpectedComma ExpectedColon ExpectedNewline InvalidChar InvalidNumber
 

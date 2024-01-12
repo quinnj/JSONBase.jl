@@ -104,7 +104,7 @@ end
 # for LazyValue, if x started at the beginning of the JSON input,
 # then we want to ensure that the entire input was consumed
 # and error if there are any trailing invalid JSON characters
-@inline checkendpos(x::LazyValue, pos, ::Type{T}) where {T} = getpos(x) == 1 && _checkendpos(x, pos, T)
+@inline checkendpos(x::LazyValue, pos, ::Type{T}) where {T} = getisroot(x) && _checkendpos(x, pos, T)
 
 function _checkendpos(x::LazyValue, pos, ::Type{T}) where {T}
     buf = getbuf(x)

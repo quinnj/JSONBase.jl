@@ -45,7 +45,7 @@ lazy(io::IOStream; kw...) = lazy(Mmap.mmap(io); kw...)
     end
     pos = 1
     @nextbyte
-    return lazy(buf, pos, len, b, Options(; kw...))
+    return lazy(buf, pos, len, b, Options(; kw...), true)
 
 @label invalid
     invalid(error, buf, pos, Any)
@@ -66,6 +66,7 @@ struct LazyValue{T}
     pos::Int # byte position in buf where this value starts
     type::JSONTypes.T # scoped enum for type of value: OBJECT, ARRAY, etc.
     opts::Options
+    isroot::Bool # true if this is the root LazyValue
 end
 
 # convenience types only used for defining `show` on LazyValue
@@ -76,12 +77,14 @@ struct LazyObject{T} <: AbstractDict{String, LazyValue}
     buf::T
     pos::Int
     opts::Options
+    isroot::Bool
 end
 
 struct LazyArray{T} <: AbstractVector{LazyValue}
     buf::T
     pos::Int
     opts::Options
+    isroot::Bool
 end
 
 const LazyValues{T} = Union{LazyValue{T}, LazyObject{T}, LazyArray{T}}
@@ -141,7 +144,7 @@ function Base.show(io::IO, x::LazyValue)
     T = gettype(x)
     if T == JSONTypes.OBJECT
         compact = get(io, :compact, false)::Bool
-        lo = LazyObject(getbuf(x), getpos(x), getopts(x))
+        lo = LazyObject(getbuf(x), getpos(x), getopts(x), getisroot(x))
         if compact
             show(io, lo)
         else
@@ -150,7 +153,7 @@ function Base.show(io::IO, x::LazyValue)
         end
     elseif T == JSONTypes.ARRAY
         compact = get(io, :compact, false)::Bool
-        la = LazyArray(getbuf(x), getpos(x), getopts(x))
+        la = LazyArray(getbuf(x), getpos(x), getopts(x), getisroot(x))
         if compact
             show(io, la)
         else
@@ -169,33 +172,33 @@ end
 
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
-@inline function lazy(buf, pos, len, b, opts)
+@inline function lazy(buf, pos, len, b, opts, isroot=false)
     if opts.jsonlines
-        return LazyValue(buf, pos, JSONTypes.ARRAY, opts)
+        return LazyValue(buf, pos, JSONTypes.ARRAY, opts, isroot)
     elseif b == UInt8('{')
-        return LazyValue(buf, pos, JSONTypes.OBJECT, opts)
+        return LazyValue(buf, pos, JSONTypes.OBJECT, opts, isroot)
     elseif b == UInt8('[')
-        return LazyValue(buf, pos, JSONTypes.ARRAY, opts)
+        return LazyValue(buf, pos, JSONTypes.ARRAY, opts, isroot)
     elseif b == UInt8('"')
-        return LazyValue(buf, pos, JSONTypes.STRING, opts)
+        return LazyValue(buf, pos, JSONTypes.STRING, opts, isroot)
     elseif b == UInt8('n') && pos + 3 <= len &&
         getbyte(buf, pos + 1) == UInt8('u') &&
         getbyte(buf, pos + 2) == UInt8('l') &&
         getbyte(buf, pos + 3) == UInt8('l')
-        return LazyValue(buf, pos, JSONTypes.NULL, opts)
+        return LazyValue(buf, pos, JSONTypes.NULL, opts, isroot)
     elseif b == UInt8('t') && pos + 3 <= len &&
         getbyte(buf, pos + 1) == UInt8('r') &&
         getbyte(buf, pos + 2) == UInt8('u') &&
         getbyte(buf, pos + 3) == UInt8('e')
-        return LazyValue(buf, pos, JSONTypes.TRUE, opts)
+        return LazyValue(buf, pos, JSONTypes.TRUE, opts, isroot)
     elseif b == UInt8('f') && pos + 4 <= len &&
         getbyte(buf, pos + 1) == UInt8('a') &&
         getbyte(buf, pos + 2) == UInt8('l') &&
         getbyte(buf, pos + 3) == UInt8('s') &&
         getbyte(buf, pos + 4) == UInt8('e')
-        return LazyValue(buf, pos, JSONTypes.FALSE, opts)
+        return LazyValue(buf, pos, JSONTypes.FALSE, opts, isroot)
     elseif b == UInt8('-') || (UInt8('0') <= b <= UInt8('9')) || (opts.float64 && (b == UInt8('N') || b == UInt8('I') || b == UInt8('+')))
-        return LazyValue(buf, pos, JSONTypes.NUMBER, opts)
+        return LazyValue(buf, pos, JSONTypes.NUMBER, opts, isroot)
     else
         error = InvalidJSON
         @goto invalid
@@ -357,10 +360,10 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
                 error = ExpectedComma
                 @goto invalid
             end
-            i += 1
             pos += 1 # move past ','
             @nextbyte
         end
+        i += 1
     end
 
 @label invalid

@@ -111,6 +111,7 @@ end
     @test JSONBase.materialize("1 \t\r"; jsonlines=true) == [1]
     @test JSONBase.materialize("1 \t\r\n"; jsonlines=true) == [1]
     @test JSONBase.materialize("1 \t\r\nnull"; jsonlines=true) == [1, nothing]
+    @test JSONBase.lazy("1\nnull"; jsonlines=true)[] == [1, nothing]
     # missing newline
     @test_throws ArgumentError JSONBase.materialize("1 \t\bnull"; jsonlines=true)
     @test_throws ArgumentError JSONBase.materialize(""; jsonlines=true)
@@ -158,6 +159,13 @@ end
     @test_throws ArgumentError JSONBase.applystring(nothing, x)
     x = JSONBase.lazy("{}"; float64=true)
     @test_throws ArgumentError JSONBase.applynumber(x -> nothing, x)
+    @test_throws ArgumentError JSONBase.materialize("123a")
+    @test_throws ArgumentError JSONBase.materialize("123.4a")
+    @test_throws ArgumentError JSONBase.materialize("[1]e")
+    @test_throws ArgumentError JSONBase.materialize("\"abc\"e+")
+    @test_throws ArgumentError JSONBase.materialize("1a\n2\n3"; jsonlines=true)
+    @test_throws ArgumentError JSONBase.materialize("1\n2\n3a"; jsonlines=true)
+    @test_throws ArgumentError JSONBase.materialize(" 123a")
 end
 
 @testset "Non-default object types: `JSONBase.$f`" for f in (JSONBase.lazy, JSONBase.binary)
