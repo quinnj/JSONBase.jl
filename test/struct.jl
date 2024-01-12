@@ -218,6 +218,23 @@ end
     obj = B()
     JSONBase.materialize!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", obj)
     @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
+    # can materialize json array into struct assuming field order
+    obj = JSONBase.materialize("""[1, 2, 3, 4]""", A)
+    @test obj == A(1, 2, 3, 4)
+    # must be careful though because we don't check that the array is the same length as the struct
+    @test_throws Any JSONBase.materialize("""[1, 2, 3, 4, 5]""", A)
+    @test_throws Any JSONBase.materialize("""[1, 2, 3]""", A)
+    # materialize singleton from empty json array
+    @test JSONBase.materialize("""[]""", C) == C()
+    # materialize mutable from json array
+    obj = JSONBase.materialize("""[1, 2, 3, 4]""", B)
+    @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
+    obj = B()
+    JSONBase.materialize!("""[1, 2, 3, 4]""", obj)
+    @test obj.a == 1 && obj.b == 2 && obj.c == 3 && obj.d == 4
+    # materialize kwdef from json array
+    obj = JSONBase.materialize("""[1, 3.14, "hey there sailor"]""", F)
+    @test obj == F(1, 3.14, "hey there sailor")
     obj = JSONBase.materialize("""{ "a": 1,"b": 2.0,"c": "3"}""", D)
     @test obj == D(1, 2.0, "3")
     obj = JSONBase.materialize("""{ "x1": "1","x2": "2","x3": "3","x4": "4","x5": "5","x6": "6","x7": "7","x8": "8","x9": "9","x10": "10","x11": "11","x12": "12","x13": "13","x14": "14","x15": "15","x16": "16","x17": "17","x18": "18","x19": "19","x20": "20","x21": "21","x22": "22","x23": "23","x24": "24","x25": "25","x26": "26","x27": "27","x28": "28","x29": "29","x30": "30","x31": "31","x32": "32","x33": "33","x34": "34","x35": "35"}""", LotsOfFields)

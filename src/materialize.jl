@@ -296,11 +296,34 @@ end
             cont = applyarray(MultiDimClosure{JS, typeof(m), T}(style, m, ones(n), Ref(n)), x)
             valfunc(m)
             return cont.pos
-        else
+        elseif T <: AbstractArray || T <: AbstractSet
             a = initarray(T)
             pos = applyarray(GenericArrayClosure{JS, T, O}(style, a), x).pos
             valfunc(a)
             return pos
+        else
+            # edge case where we support materializing a struct from a json array
+            # the struct fields are assumed to be in the same order as the json array elements
+            # and the default constructor is used with positional arguments from the json array
+            if mutable(T)
+                y = T()
+                pos = materialize!(x, y, style, O)
+                valfunc(y)
+                return pos
+            elseif kwdef(T)
+                kws = Pair{Symbol, Any}[]
+                c = KwIndexClosure{JS, T, O}(style, kws)
+                pos = applyarray(c, x).pos
+                y = T(; kws...)
+                valfunc(y)
+                return pos
+            else
+                A = Vector{Any}
+                a = initarray(A)
+                pos = applyarray(GenericArrayClosure{JS, A, O}(style, a), x).pos
+                valfunc(T(a...))
+                return pos
+            end
         end
     elseif type == JSONTypes.STRING
         str, pos = applystring(nothing, x)
@@ -434,6 +457,13 @@ end
 @inline (f::ApplyKw{JS, T})(i, k, v) where {JS, T} = push!(f.kws, k => lift(f.style, T, k, v))
 @inline (f::KwClosure{JS, T, O})(key, val) where {JS, T, O} = applyfield(T, f.style, O, key, val, ApplyKw{JS, T}(f.style, f.kws))
 
+struct KwIndexClosure{JS, T, O}
+    style::JS
+    kws::Vector{Pair{Symbol, Any}}
+end
+
+@inline (f::KwIndexClosure{JS, T, O})(i, val) where {JS, T, O} = applyfield(T, f.style, O, fieldname(T, i), val, ApplyKw{JS, T}(f.style, f.kws))
+
 struct MutableClosure{JS, T, O}
     style::JS
     x::T
@@ -447,6 +477,14 @@ end
 @inline (f::ApplyMutable{JS, T})(i, k, v) where {JS, T} = setproperty!(f.x, k, lift(f.style, T, k, v))
 @inline (f::MutableClosure{JS, T, O})(key, val) where {JS, T, O} = applyfield(T, f.style, O, key, val, ApplyMutable(f.style, f.x))
 
+# when applying json array elements to a mutable by index
+struct MutableIndexClosure{JS, T, O}
+    style::JS
+    x::T
+end
+
+@inline (f::MutableIndexClosure{JS, T, O})(i, val) where {JS, T, O} = applyfield(T, f.style, O, fieldname(T, i), val, ApplyMutable(f.style, f.x))
+
 function materialize!(x::Values, ::Type{T}, style::JSONStyle=DefaultStyle(), dicttype::Type{O}=Dict{String, Any}) where {T, O}
     y = T()
     materialize!(x, y, style, O)
@@ -455,11 +493,21 @@ end
 
 function materialize!(x::Values, y::T, style::JSONStyle=DefaultStyle(), dicttype::Type{O}=Dict{String, Any}) where {T, O}
     JS = typeof(style)
-    if dictlike(T)
-        goc = GenericObjectClosure{JS, T, O}(style, y)
-        return applyobject(goc, x).pos
+    type = gettype(x)
+    if type == JSONTypes.OBJECT
+        if dictlike(T)
+            goc = GenericObjectClosure{JS, T, O}(style, y)
+            return applyobject(goc, x).pos
+        else
+            mc = MutableClosure{JS, T, O}(style, y)
+            return applyobject(mc, x).pos
+        end
+    elseif type == JSONTypes.ARRAY
+        # the JSON source is an array, so we're going to
+        # apply each element to `y` in order, assuming each array element is the right field
+        # for y in corresponding field index order
+        return applyarray(MutableIndexClosure{JS, T, O}(style, y), x).pos
     else
-        mc = MutableClosure{JS, T, O}(style, y)
-        return applyobject(mc, x).pos
+        throw(ArgumentError("cannot materialize! from a non-object/array JSON instance"))
     end
 end
