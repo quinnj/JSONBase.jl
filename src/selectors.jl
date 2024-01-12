@@ -18,10 +18,9 @@ Supported syntax includes:
 """
 module Selectors
 
-import ..API: applyeach, Continue, arraylike
+import ..API: applyeach, EarlyReturn, arraylike, applylength
 import ..PtrString
 import ..streq
-import ..LengthClosure
 
 export List
 
@@ -53,13 +52,13 @@ arraylike(::List) = true
 
 function applyeach(f, x::List)
     # note that there should *never* be #undef
-    # values in a list, since we only ever initialize
-    # one empty, then push!/append! to it
+    # values in a list, since we only ever initialize empty
+    # then push!/append! to it
     for (i, v) in enumerate(items(x))
         ret = f(i, v)
-        ret isa Continue || return ret
+        ret isa EarlyReturn && return ret
     end
-    return Continue()
+    return
 end
 
 const KeyInd = Union{AbstractString, Symbol}
@@ -85,26 +84,24 @@ function _getindex(x, key::Union{KeyInd, Integer})
         values = List()
         applyeach(x) do _, item
             if objectlike(item)
-                ret = _getindex(item, key)
-                if ret isa List
-                    # I dont' think this is possible
-                    # (that ret isa List), but just in case
-                    append!(values, ret)
-                elseif !(ret isa Continue)
-                    push!(values, ret)
-                end
+                # if array elements are objects, we do a broadcasted getproperty with `key`
+                # should we try-catch and ignore KeyErrors?
+                push!(values, _getindex(item, key))
+            else
+                # non-objects are just ignored
             end
-            return Continue()
+            return
         end
         return values
     elseif objectlike(x) || arraylike(x)
         # indexing object w/ key or array w/ index
         # returns a single value
         ret = applyeach(x) do k, v
-            return eq(k, key) ? v : Continue()
+            eq(k, key) && return EarlyReturn(v)
+            return
         end
-        ret isa Continue && throw(KeyError(key))
-        return ret
+        ret isa EarlyReturn || throw(KeyError(key))
+        return ret.value
     else
         noselection(x)
     end
@@ -116,7 +113,7 @@ function _getindex(x, ::Colon)
     values = List()
     applyeach(x) do _, v
         push!(values, v)
-        return Continue()
+        return
     end
     return values
 end
@@ -131,16 +128,10 @@ function _getindex(x, inds::Inds)
     applyeach(x) do k, v
         i = findfirst(eq(k), inds)
         i !== nothing && push!(values, v)
-        return Continue()
+        return
     end
     return values
 end
-
-#TODO: do we need this definition?
-# function _getindex(x, f::Base.Callable)
-#     selectioncheck(x)
-#     return _getindex(x, f(x))
-# end
 
 # return all values of an object or elements of an array as a List
 # that satisfy a key-value function
@@ -149,7 +140,7 @@ function _getindex(x, ::Colon, f::Base.Callable)
     values = List()
     applyeach(x) do k, v
         f(k, v) && push!(values, v)
-        return Continue()
+        return
     end
     return values
 end
@@ -166,7 +157,7 @@ function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
                 if arraylike(v)
                     applyeach(v) do _, vv
                         push!(values, vv)
-                        return Continue()
+                        return
                     end
                 else
                     push!(values, v)
@@ -179,7 +170,7 @@ function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
                 ret = _getindex(v, ~, key)
                 append!(values, ret)
             end
-            return Continue()
+            return
         end
     elseif arraylike(x)
         applyeach(x) do _, item
@@ -190,7 +181,7 @@ function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
                 ret = _getindex(item, ~, key)
                 append!(values, ret)
             end
-            return Continue()
+            return
         end
     else
         noselection(x)
@@ -207,21 +198,9 @@ function _propertynames(x)
     nms = Symbol[]
     applyeach(x) do k, _
         push!(nms, Symbol(k))
-        return Continue()
+        return
     end
     return nms
-end
-
-# compute "length" by iterating over each key-value pair
-# TODO: move to utils? combine w/ LazyObject/LazyArray definitions?
-function _length(x)
-    selectioncheck(x)
-    ref = Ref(0)
-    lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
-    GC.@preserve ref begin
-        applyeach(lc, x)
-        return unsafe_load(lc.len)
-    end
 end
 
 # convenience macro for defining high-level getindex/getproperty methods
@@ -233,7 +212,7 @@ macro selectors(T)
         Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(x, key)
         Base.propertynames(x::$T) = Selectors._propertynames(x)
         Base.hasproperty(x::$T, key::Symbol) = key in propertynames(x)
-        Base.length(x::$T) = Selectors._length(x)
+        Base.length(x::$T) = Selectors.applylength(x)
     end)
 end
 

@@ -2,20 +2,20 @@ module API
 
 using Dates, UUIDs, Logging
 
-export applyeach, Continue, fields, mutable, kwdef,
+export applyeach, EarlyReturn, UpdatedState, fields, mutable, kwdef,
        dictlike, addkeyval!, _keytype, _valtype,
        JSONStyle, DefaultStyle, lower, lift, choosetype, arraylike
 
 """
-    JSONBase.applyeach(f, x) -> Union{JSONBase.Continue, T}
+    JSONBase.applyeach(f, x) -> Union{JSONBase.EarlyReturn, Nothing}
 
 A custom `foreach`-like function that operates specifically on `(key, val)` or `(ind, val)` pairs,
-supports short-circuiting, and can maintain/return updated state via `JSONBase.Continue`.
+and supports short-circuiting (via `JSONBase.EarlyReturn`).
 
 For each key-value or index-value pair in `x`, call `f(k, v)`.
-If `f` doesn't return a `JSONBase.Continue` instance, `applyeach` should
-return the non-`Continue` value immediately and stop iterating (i.e. short-circuit).
-`applyeach` should return `JSONBase.Continue` once iterating `x` is complete.
+If `f` returns a `JSONBase.EarlyReturn` instance, `applyeach` should
+return the `EarlyReturn` immediately and stop iterating (i.e. short-circuit).
+Otherwise, the return value of `f` is ignored and iteration continues.
 
 An example overload of `applyeach` for a generic iterable would be:
 
@@ -23,26 +23,138 @@ An example overload of `applyeach` for a generic iterable would be:
 function JSONBase.applyeach(f, x::MyIterable)
     for (i, v) in enumerate(x)
         ret = f(i, v)
-        # if `f` doesn't return Continue, return immediately
-        ret isa JSONBase.Continue || return ret
+        # if `f` returns EarlyReturn, return immediately
+        ret isa JSONBase.EarlyReturn && return ret
     end
-    return JSONBase.Continue()
+    return
 end
 ```
 """
 function applyeach end
 
 """
-    JSONBase.Continue(state)
+    JSONBase.EarlyReturn{T}
 
-A special sentinel value for use with `JSONBase.applyeach`, that indicates
-that `applyeach` should continue iterating.
+A wrapper type that can be used in function arguments to `applyeach`
+to short-circuit iteration and return a value from `applyeach`.
+
+Example usage:
+
+```julia
+function find_needle_in_haystack(haystack, needle)
+    ret = applyeach(haystack) do k, v
+        k == needle && return JSONBase.EarlyReturn(v)
+    end
+    ret isa JSONBase.EarlyReturn && return ret.value
+    throw(ArgumentError("needle not found in haystack")
+end
+````
 """
-struct Continue
-    pos::Int
+struct EarlyReturn{T}
+    value::T
 end
 
-Continue() = Continue(0)
+"""
+    JSONBase.UpdatedState{T}
+
+A JSONBase-internal wrapper type used to coordinate the lazy and binary
+applyobject/applyarray functions and materialization closures.
+Essentially, while materialization elements, we can keep track of progress made
+while parsing and pass that back to applyobject/applyarray to avoid re-parsing
+or needing to skip over already-parsed elements.
+"""
+struct UpdatedState{T}
+    value::T
+end
+
+@inline function applyeach(f, x::AbstractArray)
+    for i in eachindex(x)
+        ret = if isassigned(x, i)
+            f(i, x[i])
+        else
+            f(i, nothing)
+        end
+        ret isa EarlyReturn && return ret
+    end
+    return
+end
+
+# appropriate definition for iterables that
+# can't have #undef values
+@inline function applyeach(f, x::Union{AbstractSet, Base.Generator, Core.SimpleVector})
+    for (i, v) in enumerate(x)
+        ret = f(i, v)
+        ret isa EarlyReturn && return ret
+    end
+    return
+end
+
+_string(x) = String(x)
+_string(x::Integer) = string(x)
+
+# generic definition for Tuple, NamedTuple, structs
+@generated function applyeach(f, x::T) where {T}
+    N = fieldcount(T)
+    ex = quote
+        Base.@_inline_meta
+        fds = fields(T)
+    end
+    for i = 1:N
+        fname = fieldname(T, i)
+        str = _string(fname)
+        push!(ex.args, quote
+            field = get(fds, $(Meta.quot(fname)), nothing)
+            str = field !== nothing && haskey(field, :jsonkey) ? field.jsonkey : $str
+            ret = if isdefined(x, $i)
+                f(str, getfield(x, $i))
+            else
+                f(str, nothing)
+            end
+            ret isa EarlyReturn && return ret
+        end)
+    end
+    push!(ex.args, :(return))
+    return ex
+end
+
+function applyeach(f, x::AbstractDict)
+    for (k, v) in x
+        ret = f(k, v)
+        ret isa EarlyReturn && return ret
+    end
+    return
+end
+
+# convenience function that calls API.applyeach on x
+# but applies the function to just the 1st item
+struct ApplyOnce{F}
+    f::F
+end
+
+@inline (f::ApplyOnce)(k, v) = EarlyReturn(f.f(v))
+
+applyonce(f, x) = applyeach(ApplyOnce(f), x)
+
+struct LengthClosure
+    len::Ptr{Int}
+end
+
+# for use in apply* functions
+@inline function (f::LengthClosure)(_, _)
+    cur = unsafe_load(f.len)
+    unsafe_store!(f.len, cur + 1)
+    return
+end
+
+# compute "length" by iterating over each key-value pair
+function applylength(x)
+    ref = Ref(0)
+    lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
+    GC.@preserve ref begin
+        applyeach(lc, x)
+        return unsafe_load(lc.len)
+    end
+end
 
 """
     JSONBase.fields(T)
@@ -418,73 +530,5 @@ function arraylike end
 
 arraylike(_) = false
 arraylike(::Union{AbstractArray, AbstractSet, Tuple, Base.Generator, Core.SimpleVector}) = true
-
-@inline function applyeach(f, x::AbstractArray)
-    for i in eachindex(x)
-        ret = if isassigned(x, i)
-            f(i, x[i])
-        else
-            f(i, nothing)
-        end
-        ret isa Continue || return ret
-    end
-    return Continue()
-end
-
-# appropriate definition for iterables that
-# can't have #undef values
-@inline function applyeach(f, x::Union{AbstractSet, Base.Generator, Core.SimpleVector})
-    for (i, v) in enumerate(x)
-        ret = f(i, v)
-        ret isa Continue || return ret
-    end
-    return Continue()
-end
-
-_string(x) = String(x)
-_string(x::Integer) = string(x)
-
-# generic definition for Tuple, NamedTuple, structs
-@generated function applyeach(f, x::T) where {T}
-    N = fieldcount(T)
-    ex = quote
-        Base.@_inline_meta
-        fds = fields(T)
-    end
-    for i = 1:N
-        fname = fieldname(T, i)
-        str = _string(fname)
-        push!(ex.args, quote
-            field = get(fds, $(Meta.quot(fname)), nothing)
-            str = field !== nothing && haskey(field, :jsonkey) ? field.jsonkey : $str
-            ret = if isdefined(x, $i)
-                f(str, getfield(x, $i))
-            else
-                f(str, nothing)
-            end
-            ret isa Continue || return ret
-        end)
-    end
-    push!(ex.args, :(return Continue()))
-    return ex
-end
-
-function applyeach(f, x::AbstractDict)
-    for (k, v) in x
-        ret = f(k, v)
-        ret isa Continue || return ret
-    end
-    return Continue()
-end
-
-# convenience function that calls API.applyeach on x
-# but applies the function to just the 1st item
-struct ApplyOnce{F}
-    f::F
-end
-
-@inline (f::ApplyOnce)(k, v) = f.f(v)
-
-applyonce(f, x) = applyeach(ApplyOnce(f), x)
 
 end # module API

@@ -148,7 +148,7 @@ end
 
 @inline function (f::GenericObjectClosure{JS, O, T})(key, val) where {JS, O, T}
     pos = _materialize(GenericObjectValFunc{JS, O, typeof(key)}(f.style, f.keyvals, key), val, choosetype(f.style, _valtype(f.keyvals), val), f.style, T)
-    return Continue(pos)
+    return UpdatedState(pos)
 end
 
 struct GenericArrayClosure{JS, A, T}
@@ -166,7 +166,7 @@ end
 
 @inline function (f::GenericArrayClosure{JS, A, T})(i, val) where {JS, A, T}
     pos = _materialize(GenericArrayValFunc{JS, A}(f.style, f.arr), val, choosetype(f.style, eltype(f.arr), val), f.style, T)
-    return Continue(pos)
+    return UpdatedState(pos)
 end
 
 # recursively build up multidimensional array dimensions
@@ -178,27 +178,15 @@ end
 # length of innermost array is 1st dim
 function discover_dims(x)
     @assert gettype(x) == JSONTypes.ARRAY
-    ref = Ref(0)
-    alc = ArrayLengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
-    GC.@preserve ref applyarray(alc, x)
-    len = unsafe_load(alc.len)
+    len = API.applylength(x)
     ret = applyarray(x) do i, v
         if gettype(v) == JSONTypes.ARRAY
-            return discover_dims(v)
+            return EarlyReturn(discover_dims(v))
         else
-            return ()
+            return EarlyReturn(())
         end
     end
-    return (ret..., len)
-end
-
-struct ArrayLengthClosure
-    len::Ptr{Int}
-end
-
-@inline function (f::ArrayLengthClosure)(i, val)
-    unsafe_store!(f.len, i)
-    return Continue()
+    return (ret.value..., len)
 end
 
 struct MultiDimClosure{JS, A, T}
@@ -214,11 +202,10 @@ end
         f.cur_dim[] -= 1
         pos = applyarray(f, val)
         f.cur_dim[] += 1
-        return pos
     else
         pos = _materialize(MultiDimValFunc(f.style, f.arr, f.dims), val, choosetype(f.style, eltype(f.arr), val), f.style, T)
     end
-    return Continue(pos)
+    return UpdatedState(pos)
 end
 
 struct MultiDimValFunc{JS, A}
@@ -249,23 +236,23 @@ end
         # T is the final object type
         if T === Any
             d = O()
-            pos = applyobject(GenericObjectClosure{JS, O, O}(style, d), x).pos
+            pos = applyobject(GenericObjectClosure{JS, O, O}(style, d), x)
             valfunc(d)
             return pos
         elseif dictlike(T)
             d = T()
-            pos = applyobject(GenericObjectClosure{JS, T, O}(style, d), x).pos
+            pos = applyobject(GenericObjectClosure{JS, T, O}(style, d), x)
             valfunc(d)
             return pos
         elseif mutable(T)
             y = T()
-            cont = materialize!(x, y, style, O)
+            pos = materialize!(x, y, style, O)
             valfunc(y)
-            return cont.pos
+            return pos
         elseif kwdef(T)
             kws = Pair{Symbol, Any}[]
             c = KwClosure{JS, T, O}(style, kws)
-            pos = applyobject(c, x).pos
+            pos = applyobject(c, x)
             y = T(; kws...)
             valfunc(y)
             return pos
@@ -274,7 +261,7 @@ end
             N = fieldcount(T)
             vec = Vector{Any}(undef, N)
             sc = StructClosure{JS, T, O}(style, vec)
-            pos = applyobject(sc, x).pos
+            pos = applyobject(sc, x)
             constructor = T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
             construct(T, constructor, vec, valfunc)
             return pos
@@ -283,7 +270,7 @@ end
         if T === Any
             A = Vector{Any}
             a = initarray(A)
-            pos = applyarray(GenericArrayClosure{JS, A, O}(style, a), x).pos
+            pos = applyarray(GenericArrayClosure{JS, A, O}(style, a), x)
             valfunc(a)
             return pos
         elseif T <: AbstractArray && ndims(T) > 1
@@ -293,12 +280,12 @@ end
             m = T(undef, dims)
             n = ndims(m)
             # now we do the actual parsing to fill in our n-dimensional array
-            cont = applyarray(MultiDimClosure{JS, typeof(m), T}(style, m, ones(n), Ref(n)), x)
+            pos = applyarray(MultiDimClosure{JS, typeof(m), T}(style, m, ones(n), Ref(n)), x)
             valfunc(m)
-            return cont.pos
+            return pos
         elseif T <: AbstractArray || T <: AbstractSet
             a = initarray(T)
-            pos = applyarray(GenericArrayClosure{JS, T, O}(style, a), x).pos
+            pos = applyarray(GenericArrayClosure{JS, T, O}(style, a), x)
             valfunc(a)
             return pos
         else
@@ -307,20 +294,20 @@ end
             # and the default constructor is used with positional arguments from the json array
             if mutable(T)
                 y = T()
-                cont = materialize!(x, y, style, O)
+                pos = materialize!(x, y, style, O)
                 valfunc(y)
-                return cont.pos
+                return pos
             elseif kwdef(T)
                 kws = Pair{Symbol, Any}[]
                 c = KwIndexClosure{JS, T, O}(style, kws)
-                pos = applyarray(c, x).pos
+                pos = applyarray(c, x)
                 y = T(; kws...)
                 valfunc(y)
                 return pos
             else
                 A = Vector{Any}
                 a = initarray(A)
-                pos = applyarray(GenericArrayClosure{JS, A, O}(style, a), x).pos
+                pos = applyarray(GenericArrayClosure{JS, A, O}(style, a), x)
                 constructor = T <: Tuple ? tuple : T <: NamedTuple ? ((x...) -> T(tuple(x...))) : T
                 valfunc(constructor(a...))
                 return pos
@@ -388,13 +375,13 @@ end
                 c = ValFuncClosure($i, $(Meta.quot(fname)), valfunc)
                 typ = choosetype(style, $T, key, $ftype, val)
                 pos = _materialize(c, val, typ, style, $O)
-                return Continue(pos)
+                return UpdatedState(pos)
             end
         end)
     end
-    # if no fields matched this json key, then we return Continue()
+    # if no fields matched this json key, then we return nothing
     # here to signal that the value should be skipped
-    push!(ex.args, :(return Continue()))
+    push!(ex.args, :(return))
     # str = sprint(show, ex)
     # println(str)
     return ex

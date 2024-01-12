@@ -10,18 +10,7 @@ include("utils.jl")
 include("interfaces.jl")
 using .API
 
-pass(args...) = Continue(0)
-
-struct LengthClosure
-  len::Ptr{Int}
-end
-
-# for use in apply* functions
-@inline function (f::LengthClosure)(_, _)
-  cur = unsafe_load(f.len)
-  unsafe_store!(f.len, cur + 1)
-  return Continue()
-end
+pass(args...) = nothing
 
 include("selectors.jl")
 using .Selectors

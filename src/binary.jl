@@ -171,7 +171,7 @@ end
     # update our nfields
     nfields = readnumber(f.tape, f.tape_nfields, Int32)
     _writenumber(nfields + Int32(1), f.tape, f.tape_nfields)
-    return Continue(pos)
+    return UpdatedState(pos)
 end
 
 struct BinaryArrayClosure
@@ -188,7 +188,7 @@ end
     # update our nelems
     nelems = readnumber(f.tape, f.tape_nelems, Int32)
     _writenumber(nelems + Int32(1), f.tape, f.tape_nelems)
-    return Continue(pos)
+    return UpdatedState(pos)
 end
 
 struct BinaryNumberClosure{T}
@@ -228,7 +228,7 @@ end
         # log our current i in our total bytes slot
         _writenumber(i % Int32, tape, tape_i)
         c = BinaryObjectClosure(tape, x, tape_i, tape_nfields)
-        pos = applyobject(c, x).pos
+        pos = applyobject(c, x)
         # we've now recursively serialized all the object key/value fields
         # compute SizeMeta, even though we write nfields unconditionally
         _, sm = sizemeta(0)
@@ -267,7 +267,7 @@ end
         # now we can start writing the elements
         _writenumber(i % Int32, tape, tape_i)
         c = BinaryArrayClosure(tape, tape_i, tape_nelems)
-        pos = applyarray(c, x).pos
+        pos = applyarray(c, x)
         # compute SizeMeta, even though we write nelems unconditionally
         #TODO: store eltype in SizeMeta or 0x1f if not homogenous?
         _, sm = sizemeta(0)
@@ -512,10 +512,10 @@ end
         key, pos = applystring(nothing, BinaryValue(tape, pos, JSONTypes.STRING))
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(key, b)
-        ret isa Continue || return ret
-        pos = ret.pos == 0 ? skip(b) : ret.pos
+        ret isa EarlyReturn && return ret
+        pos = ret isa UpdatedState ? ret.value : skip(b)
     end
-    return Continue(pos)
+    return pos
 end
 
 @inline function applyarray(keyvalfunc::F, x::BinaryValues) where {F}
@@ -531,10 +531,10 @@ end
     for i = 1:nfields
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(i, b)
-        ret isa Continue || return ret
-        pos = ret.pos == 0 ? skip(b) : ret.pos
+        ret isa EarlyReturn && return ret
+        pos = ret isa UpdatedState ? ret.value : skip(b)
     end
-    return Continue(pos)
+    return pos
 end
 
 # return a PtrString for an embedded string in binary format

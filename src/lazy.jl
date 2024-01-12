@@ -89,87 +89,6 @@ end
 
 const LazyValues{T} = Union{LazyValue{T}, LazyObject{T}, LazyArray{T}}
 
-gettype(::LazyObject) = JSONTypes.OBJECT
-
-function Base.length(x::LazyObject)
-    ref = Ref(0)
-    lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
-    GC.@preserve ref begin
-        applyobject(lc, x)
-        return unsafe_load(lc.len)
-    end
-end
-
-struct IterateObjectClosure
-    kvs::Vector{Pair{String, LazyValue}}
-end
-
-@inline function (f::IterateObjectClosure)(k, v)
-    push!(f.kvs, tostring(String, k) => v)
-    return Continue()
-end
-
-function Base.iterate(x::LazyObject, st=nothing)
-    if st === nothing
-        # first iteration
-        kvs = Pair{String, LazyValue}[]
-        applyobject(IterateObjectClosure(kvs), x)
-        i = 1
-    else
-        kvs = st[1]
-        i = st[2]
-    end
-    i > length(kvs) && return nothing
-    return kvs[i], (kvs, i + 1)
-end
-
-gettype(::LazyArray) = JSONTypes.ARRAY
-
-Base.IndexStyle(::Type{<:LazyArray}) = Base.IndexLinear()
-
-function Base.size(x::LazyArray)
-    ref = Ref(0)
-    lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
-    GC.@preserve ref begin
-        applyarray(lc, x)
-        return (unsafe_load(lc.len),)
-    end
-end
-
-Base.isassigned(x::LazyArray, i::Int) = true
-Base.getindex(x::LazyArray, i::Int) = Selectors._getindex(x, i)
-API.applyeach(f, x::LazyArray) = applyarray(f, x)
-
-function Base.show(io::IO, x::LazyValue)
-    T = gettype(x)
-    if T == JSONTypes.OBJECT
-        compact = get(io, :compact, false)::Bool
-        lo = LazyObject(getbuf(x), getpos(x), getopts(x), getisroot(x))
-        if compact
-            show(io, lo)
-        else
-            io = IOContext(io, :compact => true)
-            show(io, MIME"text/plain"(), lo)
-        end
-    elseif T == JSONTypes.ARRAY
-        compact = get(io, :compact, false)::Bool
-        la = LazyArray(getbuf(x), getpos(x), getopts(x), getisroot(x))
-        if compact
-            show(io, la)
-        else
-            io = IOContext(io, :compact => true)
-            show(io, MIME"text/plain"(), la)
-        end
-    elseif T == JSONTypes.STRING
-        str, _ = applystring(nothing, x)
-        Base.print(io, "JSONBase.LazyValue(", repr(tostring(String, str)), ")")
-    elseif T == JSONTypes.NULL
-        Base.print(io, "JSONBase.LazyValue(nothing)")
-    else # bool/number
-        Base.print(io, "JSONBase.LazyValue(", materialize(x), ")")
-    end
-end
-
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
 @inline function lazy(buf, pos, len, b, opts, isroot=false)
@@ -215,8 +134,7 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
 # `keyvalfunc` is provided a PtrString => LazyValue pair
 # to materialize the key, call `tostring(key)`
 # this is done automatically in selection syntax via `keyvaltostring` transformer
-# returns a Continue(pos) value that notes the next position where parsing should
-# continue (selection syntax requires Continue to be returned from applyeach)
+# returns a `pos` value that notes the next position where parsing should continue
 @inline function applyobject(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
     buf = getbuf(x)
@@ -229,9 +147,7 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
     end
     pos += 1
     @nextbyte
-    if b == UInt8('}')
-        return Continue(pos + 1)
-    end
+    b == UInt8('}') && return pos + 1
     while true
         # applystring returns key as a PtrString
         key, pos = applystring(nothing, LazyValue(buf, pos, JSONTypes.STRING, getopts(x), false))
@@ -245,17 +161,16 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(key, val)
-        # if ret is not an Continue, then we're
-        # short-circuiting parsing via e.g. selection syntax
-        # so return immediately
-        ret isa Continue || return ret
+        # if ret is an EarlyReturn, then we're short-circuiting
+        # parsing via e.g. selection syntax, so return immediately
+        ret isa EarlyReturn && return ret
         # if keyvalfunc didn't materialize `val` and return an
         # updated `pos`, then we need to skip val ourselves
-        pos = ret.pos == 0 ? skip(val) : ret.pos
+        pos = ret isa UpdatedState ? ret.value : skip(val)
         @nextbyte
         # check for terminating conditions
         if b == UInt8('}')
-            return Continue(pos + 1)
+            return pos + 1
         elseif b != UInt8(',')
             error = ExpectedComma
             @goto invalid
@@ -275,12 +190,12 @@ end
 macro jsonlines_checks()
     esc(quote
         # if we're at EOF, then we're done
-        pos > len && return Continue(pos)
+        pos > len && return pos
         # now we want to ignore whitespace, but *not* newlines
         b = getbyte(buf, pos)
         while b == UInt8(' ') || b == UInt8('\t')
             pos += 1
-            pos > len && return Continue(pos)
+            pos > len && return pos
             b = getbyte(buf, pos)
         end
         # any combo of '\r', '\n', or '\r\n' is a valid delimiter
@@ -288,12 +203,12 @@ macro jsonlines_checks()
         if b == UInt8('\r')
             foundr = true
             pos += 1
-            pos > len && return Continue(pos)
+            pos > len && return pos
             b = getbyte(buf, pos)
         end
         if b == UInt8('\n')
             pos += 1
-            pos > len && return Continue(pos)
+            pos > len && return pos
             b = getbyte(buf, pos)
         elseif !foundr
             # if we didn't find a newline and we're not EOF
@@ -304,7 +219,7 @@ macro jsonlines_checks()
         end
         while b == UInt8(' ') || b == UInt8('\t')
             pos += 1
-            pos > len && return Continue(pos)
+            pos > len && return pos
             b = getbyte(buf, pos)
         end
     end)
@@ -318,8 +233,7 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
 # `keyvalfunc` is provided a Int => LazyValue pair
 # applyeach always requires a key-value pair function
 # so we use the index as the key
-# returns a Continue(pos) value that notes the next position where parsing should
-# continue (selection syntax requires Continue to be returned from applyeach)
+# returns a `pos` value that notes the next position where parsing should continue
 @inline function applyarray(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
     buf = getbuf(x)
@@ -334,9 +248,7 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
         end
         pos += 1
         @nextbyte
-        if b == UInt8(']')
-            return Continue(pos + 1)
-        end
+        b == UInt8(']') && return pos + 1
     else
         # for jsonlines, we need to make sure that recursive
         # lazy values *don't* consider individual lines *also*
@@ -348,14 +260,14 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(i, val)
-        ret isa Continue || return ret
-        pos = ret.pos == 0 ? skip(val) : ret.pos
+        ret isa EarlyReturn && return ret
+        pos = ret isa UpdatedState ? ret.value : skip(val)
         if jsonlines
             @jsonlines_checks
         else
             @nextbyte
             if b == UInt8(']')
-                return Continue(pos + 1)
+                return pos + 1
             elseif b != UInt8(',')
                 error = ExpectedComma
                 @goto invalid
@@ -452,9 +364,9 @@ end
 @inline function skip(x::LazyValue)
     T = gettype(x)
     if T == JSONTypes.OBJECT
-        return _applyobject(pass, x).pos
+        return _applyobject(pass, x)
     elseif T == JSONTypes.ARRAY
-        return _applyarray(pass, x).pos
+        return _applyarray(pass, x)
     elseif T == JSONTypes.STRING
         pos = applystring(pass, x)
         return pos
@@ -466,5 +378,72 @@ end
         return getpos(x) + 5
     elseif T == JSONTypes.NULL
         return getpos(x) + 4
+    end
+end
+
+gettype(::LazyObject) = JSONTypes.OBJECT
+
+Base.length(x::LazyObject) = API.applylength(x)
+
+struct IterateObjectClosure
+    kvs::Vector{Pair{String, LazyValue}}
+end
+
+@inline function (f::IterateObjectClosure)(k, v)
+    push!(f.kvs, tostring(String, k) => v)
+    return
+end
+
+function Base.iterate(x::LazyObject, st=nothing)
+    if st === nothing
+        # first iteration
+        kvs = Pair{String, LazyValue}[]
+        applyobject(IterateObjectClosure(kvs), x)
+        i = 1
+    else
+        kvs = st[1]
+        i = st[2]
+    end
+    i > length(kvs) && return nothing
+    return kvs[i], (kvs, i + 1)
+end
+
+gettype(::LazyArray) = JSONTypes.ARRAY
+
+Base.IndexStyle(::Type{<:LazyArray}) = Base.IndexLinear()
+
+Base.size(x::LazyArray) = (API.applylength(x),)
+
+Base.isassigned(x::LazyArray, i::Int) = true
+Base.getindex(x::LazyArray, i::Int) = Selectors._getindex(x, i)
+API.applyeach(f, x::LazyArray) = applyarray(f, x)
+
+function Base.show(io::IO, x::LazyValue)
+    T = gettype(x)
+    if T == JSONTypes.OBJECT
+        compact = get(io, :compact, false)::Bool
+        lo = LazyObject(getbuf(x), getpos(x), getopts(x), getisroot(x))
+        if compact
+            show(io, lo)
+        else
+            io = IOContext(io, :compact => true)
+            show(io, MIME"text/plain"(), lo)
+        end
+    elseif T == JSONTypes.ARRAY
+        compact = get(io, :compact, false)::Bool
+        la = LazyArray(getbuf(x), getpos(x), getopts(x), getisroot(x))
+        if compact
+            show(io, la)
+        else
+            io = IOContext(io, :compact => true)
+            show(io, MIME"text/plain"(), la)
+        end
+    elseif T == JSONTypes.STRING
+        str, _ = applystring(nothing, x)
+        Base.print(io, "JSONBase.LazyValue(", repr(tostring(String, str)), ")")
+    elseif T == JSONTypes.NULL
+        Base.print(io, "JSONBase.LazyValue(nothing)")
+    else # bool/number
+        Base.print(io, "JSONBase.LazyValue(", materialize(x), ")")
     end
 end

@@ -190,7 +190,7 @@ end
     pos += 1
     # store our updated pos
     unsafe_store!(f.pos, pos)
-    return Continue()
+    return
 end
 
 @noinline throwjsonlines() = throw(ArgumentError("jsonlines only supported for arraylike"))

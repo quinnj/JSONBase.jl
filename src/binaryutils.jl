@@ -81,7 +81,7 @@ end
 
 @inline function (f::IterateBinaryObjectClosure)(k, v)
     push!(f.kvs, tostring(String, k) => v)
-    return Continue()
+    return
 end
 
 function Base.iterate(x::BinaryObject, st=nothing)
