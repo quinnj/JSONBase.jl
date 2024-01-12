@@ -10,7 +10,7 @@ sizeguess(_) = 512
     JSONBase.json(x) -> String
     JSONBase.json(io, x)
     JSONBase.json(file_name, x)
-    JSONBase.json!(buf, pos, x[, style, allownan]) -> pos
+    JSONBase.json!(buf, pos, x[, style, allownan, jsonlines]) -> pos
 
 Serialize `x` to JSON format. The 1st method takes just the object and returns a `String`.
 In the 2nd method, `io` is an `IO` object, and the JSON output will be written to it.
@@ -28,6 +28,12 @@ The 4th method optionally accepts `allownan` as a 5th positional argument.
 If `allownan` is `true`, allow `Inf`, `-Inf`, and `NaN` in the output.
 If `allownan` is `false`, throw an error if `Inf`, `-Inf`, or `NaN` is encountered.
 `allownan` is `false` by default.
+
+All methods except the 4th also accept `jsonlines::Bool=false` as a keyword argument.
+The 4th method optionally accepts `jsonlines` as a 6th positional argument.
+If `jsonlines` is `true`, input must be array-like and the output will be written in the JSON Lines format,
+where each element of the array is written on a separate line (i.e. separated by a single newline character `\n`).
+If `jsonlines` is `false`, the output will be written in the standard JSON format (default behavior).
 
 Pretty printing of the JSON output is controlled via the `pretty` keyword argument. If `pretty` is `true`,
 the output will be pretty-printed with 4 spaces of indentation. If `pretty` is an integer, it will be used
@@ -65,22 +71,28 @@ These allow common Base/stdlib types to be serialized in an expected format.
 
 *NOTE*: `JSONBase.json` should _not_ be overloaded directly by custom
 types as this isn't robust for various output options (IO, String, etc.)
-and isn't conducive to recursive situations. Types should define an appropriate
+nor recursive situations. Types should define an appropriate
 [`JSONBase.lower`](@ref) definition instead.
 """
 function json end
 
-function json(io::IO, x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false, pretty::Union{Integer,Bool}=false) where {T}
+# if jsonlines and pretty is not 0 or false, throw an ArgumentError
+_jsonlines_pretty_check(jsonlines, pretty) = jsonlines && pretty !== false && !iszero(pretty)
+@noinline _jsonlines_pretty_throw() = throw(ArgumentError("pretty printing is not supported when writing jsonlines"))
+
+function json(io::IO, x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false, jsonlines::Bool=false, pretty::Union{Integer,Bool}=false) where {T}
+    _jsonlines_pretty_check(jsonlines, pretty) && _jsonlines_pretty_throw()
     y = lower(style, x)
     buf = Vector{UInt8}(undef, sizeguess(y))
-    pos = json!(buf, 1, y, style, allownan, nothing, pretty === true ? 4 : Int(pretty))
+    pos = json!(buf, 1, y, style, allownan, jsonlines, nothing, pretty === true ? 4 : Int(pretty))
     return write(io, resize!(buf, pos - 1))
 end
 
-function json(x; style::JSONStyle=DefaultStyle(), allownan::Bool=false, pretty::Union{Integer,Bool}=false)
+function json(x; style::JSONStyle=DefaultStyle(), allownan::Bool=false, jsonlines::Bool=false, pretty::Union{Integer,Bool}=false)
+    _jsonlines_pretty_check(jsonlines, pretty) && _jsonlines_pretty_throw()
     y = lower(style, x)
     buf = Base.StringVector(sizeguess(y))
-    pos = json!(buf, 1, y, style, allownan, nothing, pretty === true ? 4 : Int(pretty))
+    pos = json!(buf, 1, y, style, allownan, jsonlines, nothing, pretty === true ? 4 : Int(pretty))
     return String(resize!(buf, pos - 1))
 end
 
@@ -111,6 +123,7 @@ struct WriteClosure{JS, arraylike, T} # T is the type of the parent object/array
     depth::Int
     style::JS
     allownan::Bool
+    jsonlines::Bool
     objids::Base.IdSet{Any} # to track circular references
 end
 
@@ -169,18 +182,21 @@ end
         # if so, it's a circular reference! so we just write `null`
         pos = _null(buf, pos)
     else
-        pos = json!(buf, pos, lowered, f.style, f.allownan, f.objids, ind, f.depth)
+        # note that jsonlines is hard-coded as false here because you can't recursively print jsonlines
+        pos = json!(buf, pos, lowered, f.style, f.allownan, false, f.objids, ind, f.depth)
     end
     @checkn 1
-    buf[pos] = UInt8(',')
+    @inbounds buf[pos] = f.jsonlines ? UInt8('\n') : UInt8(',')
     pos += 1
     # store our updated pos
     unsafe_store!(f.pos, pos)
     return Continue()
 end
 
+@noinline throwjsonlines() = throw(ArgumentError("jsonlines only supported for arraylike"))
+
 # assume x is lowered value
-function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing, ind::Int=0, depth::Int=0)
+function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, jsonlines::Bool=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing, ind::Int=0, depth::Int=0)
     # string
     if x isa AbstractString
         return _string(buf, pos, x)
@@ -224,15 +240,19 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, obj
         # appropriate `lower` method should be defined (preferred) or perhaps
         # a custom `API.applyeach` override to provide key-value pairs (more rare)
         al = arraylike(x)
-        @checkn 1
-        @inbounds buf[pos] = al ? UInt8('[') : UInt8('{')
-        pos += 1
+        if !jsonlines
+            @checkn 1
+            @inbounds buf[pos] = al ? UInt8('[') : UInt8('{')
+            pos += 1
+        else
+            al || throwjsonlines()
+        end
         pre_pos = pos
         ref = Ref(pos)
         # use an IdSet to keep track of circular references
         objids = objids === nothing ? Base.IdSet{Any}() : objids
         push!(objids, x)
-        c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), ind, depth + 1, style, allownan, objids)
+        c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), ind, depth + 1, style, allownan, jsonlines, objids)
         GC.@preserve ref API.applyeach(c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
@@ -245,7 +265,8 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, obj
             # but if the object/array was empty, we need to do the check manually
             @checkn 1
         end
-        @inbounds buf[pos] = al ? UInt8(']') : UInt8('}')
+        # even if the input is empty and we're jsonlines, the spec says it's ok to end w/ a newline
+        @inbounds buf[pos] = jsonlines ? UInt8('\n') : al ? UInt8(']') : UInt8('}')
         return pos + 1
     end
 end

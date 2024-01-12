@@ -207,4 +207,14 @@ end
     @test_throws MethodError JSONBase.json(CustomNumber(3.14))
     JSONBase.tostring(x::CustomNumber) = string(x.x)
     @test JSONBase.json(CustomNumber(3.14)) == "3.14"
+    # jsonlines output
+    @test JSONBase.json([1, 2, 3]; jsonlines=true) == "1\n2\n3\n"
+    # jsonlines output with pretty not allowed
+    @test_throws ArgumentError JSONBase.json([1, 2, 3]; jsonlines=true, pretty=true)
+    # jsonlines each line is an object
+    @test JSONBase.json([(a=1, b=2), (a=3, b=4)]; jsonlines=true) == "{\"a\":1,\"b\":2}\n{\"a\":3,\"b\":4}\n"
+    # jsonlinesn with empty array
+    @test JSONBase.json([]; jsonlines=true) == "\n"
+    # jsonlines not allowed on objects
+    @test_throws ArgumentError JSONBase.json((a=1, b=2); jsonlines=true)
 end
