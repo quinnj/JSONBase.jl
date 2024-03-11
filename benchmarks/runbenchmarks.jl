@@ -1,6 +1,34 @@
-using JET, JSONBase, BenchmarkTools, Cthulhu, Profile, PProf, JSON, JSON3, Test, UUIDs, Dates, OrderedCollections
+using Structs, JSONBase, Chairmarks, Profile, JSON, JSON3, Test, UUIDs, Dates, OrderedCollections
 
-json = """
+struct A
+  a::Int
+  b::Int
+  c::Int
+  d::Int
+end
+
+function comp(json, T=Any)
+    println("JSON.jl:")
+    @show @time JSON.parse(json)
+    display(@be JSON.parse(json))
+    println("\nJSON3.jl:")
+    @show @time JSON3.read(json)
+    display(@be JSON3.read(json))
+    println("\nJSONBase.materialize:")
+    @show @time JSONBase.materialize(json)
+    display(@be JSONBase.materialize(json))
+    println("\nJSONBase.binary:")
+    @show @time JSONBase.binary(json)
+    display(@be JSONBase.binary(json))
+    println("\nJSONBase.materialize with type:")
+    @show @time JSONBase.materialize(json, T)
+    display(@be JSONBase.materialize(json, T))
+end
+
+comp("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
+comp("""[1,2,3,4]""")
+
+comp("""
 {
 "store": {
     "book": [
@@ -32,69 +60,63 @@ json = """
 },
 "expensive": 10
 }
-"""
+""")
 
-@btime JSON.parse(json) #   2.181 μs (63 allocations: 4.09 KiB)
-@btime JSON3.read(json) #   1.521 μs (7 allocations: 5.44 KiB)
-@btime JSONBase.materialize(json) #  2.616 μs (64 allocations: 4.10 KiB)
-@btime JSONBase.binary(json) #  1.429 μs (2 allocations: 608 bytes)
+@b JSON.parse(json) #   2.181 μs (63 allocations: 4.09 KiB)
+@b JSON3.read(json) #   1.521 μs (7 allocations: 5.44 KiB)
+@b JSONBase.materialize(json) #  2.616 μs (64 allocations: 4.10 KiB)
+@b JSONBase.binary(json) #  1.429 μs (2 allocations: 608 bytes)
 x = JSONBase.binary(json)
-@btime JSONBase.materialize($x)
+@b JSONBase.materialize($x)
 # 2.704 μs (142 allocations: 5.93 KiB)
 
 x = JSON.parse(json)
-@btime JSON.json(x)
-@btime JSONBase.json(x)
+@b JSON.json(x)
+@b JSONBase.json(x)
 x = JSON3.read(json)
-@btime JSON3.write(x)
+@b JSON3.write(x)
 
-struct A
-  a::Int
-  b::Int
-  c::Int
-  d::Int
-end
 
-@btime JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
+
+@b JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
   # 183.152 ns (3 allocations: 144 bytes)
 
-mutable struct B
+@b JSON.parse("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
+  # 597.848 ns (9 allocations: 640 bytes)
+
+@b JSON3.read("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
+  # 1.325 μs (8 allocations: 1.11 KiB)
+
+@b JSON3.read("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
+  # 1.129 μs (3 allocations: 544 bytes)
+
+@noarg mutable struct B
     a::Int
     b::Int
     c::Int
     d::Int
-    B() = new()
 end
 
-JSONBase.mutable(::Type{B}) = true
-
-@btime JSONBase.materialize!("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
+@b JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", B)
   # 240.526 ns (1 allocation: 48 bytes)
 
-@btime JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
+@b JSONBase.materialize("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
   # 364.038 ns (9 allocations: 624 bytes)
 
-@btime JSON.parse("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
-  # 597.848 ns (9 allocations: 640 bytes)
 
-@btime JSON3.read("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
-  # 1.325 μs (8 allocations: 1.11 KiB)
 
-@btime JSON3.read("""{ "a": 1,"b": 2,"c": 3,"d": 4}""", A)
-  # 1.129 μs (3 allocations: 544 bytes)
-
-@btime JSONBase.binary("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
+@b JSONBase.binary("""{ "a": 1,"b": 2,"c": 3,"d": 4}""")
   # 138.166 ns (1 allocation: 576 bytes)
 
-@btime JSONBase.json(nothing)
+@b JSONBase.json(nothing)
   # 23.654 ns (2 allocations: 88 bytes)
 "null"
 
-@btime JSON3.write(nothing)
+@b JSON3.write(nothing)
   # 53.753 ns (2 allocations: 88 bytes)
 "null"
 
-@btime JSON.json(nothing)
+@b JSON.json(nothing)
   # 83.592 ns (4 allocations: 192 bytes)
 "null"
 
@@ -120,9 +142,9 @@ struct Tape
   data::Vector{Ticket}
 end
 
-@btime JSON.parse($json)
-@btime JSON3.read($json)
-@btime JSON3.read($json, Tape)
-@btime JSONBase.materialize($json)
-@btime JSONBase.binary($json)
-@btime JSONBase.materialize($json, Tape)
+@b JSON.parse($json)
+@b JSON3.read($json)
+@b JSON3.read($json, Tape)
+@b JSONBase.materialize($json)
+@b JSONBase.binary($json)
+@b JSONBase.materialize($json, Tape)

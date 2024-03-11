@@ -15,9 +15,6 @@ invalid JSON at byte position $pos while parsing type $T: $error
 $(Base.String(buf[max(1, pos-25):min(end, pos+25)]))
 """))
 
-# like nonnothingtype + nonmissingtype together
-non_nothing_missing_type(@nospecialize T) = Base.typesplit(Base.typesplit(T, Nothing), Missing)
-
 # helper struct we pack lazy-specific keyword args into
 # held by LazyValue for access
 struct Options
@@ -160,6 +157,7 @@ end
 
 # generic fallback
 tostring(::Type{T}, x::PtrString) where {T} = tostring(String, x)
+tostring(::Type{T}, x::AbstractString) where {T} = T(x)
 
 """
     JSONBase.tostring(x)
@@ -197,10 +195,8 @@ end
 
 streq(x::PtrString, y::PtrString) = x.len == y.len && ccall(:memcmp, Cint, (Ptr{UInt8}, Ptr{UInt8}, Csize_t), x.ptr, y.ptr, x.len) == 0
 
-# a helper higher-order function that converts an
-# API.applyeach function that operates potentially on a
-# PtrString to one that operates on a String
-keyvaltostring(f) = (k, v) -> f(tostring(String, k), v)
+# allows comparing PtrString to String in Structs.makestruct to avoid allocating a String from PtrString
+Structs.keyeq(x::PtrString, y::String) = streq(x, y)
 
 # unsafe because we're not checking that src or dst are valid pointers
 # NOR are we checking that up to `n` bytes after dst are also valid to write to

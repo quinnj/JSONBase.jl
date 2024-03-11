@@ -1,4 +1,4 @@
-using Test, JSONBase, UUIDs, Dates, OrderedCollections #, BenchmarkTools, JSON
+using Test, JSONBase, Structs, UUIDs, Dates, OrderedCollections
 
 # helper struct for testing reading json from files
 struct File end
@@ -42,7 +42,7 @@ end
     @test isempty(x) && typeof(x) == Dict{String, Any}
     @test_throws ArgumentError JSONBase.materialize(JSONBase.LazyValue(".", 1, JSONBase.JSONTypes.OBJECT, JSONBase.OPTIONS, true))
     x = JSONBase.lazy("1")
-    @test_throws ArgumentError JSONBase.API.applyeach((k, v) -> nothing, x)
+    @test_throws ArgumentError Structs.applyeach((k, v) -> nothing, x)
     x = JSONBase.materialize("{\"a\": 1}")
     @test !isempty(x) && x["a"] == 1 && typeof(x) == Dict{String, Any}
     x = JSONBase.materialize("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")

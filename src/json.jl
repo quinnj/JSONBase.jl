@@ -6,6 +6,14 @@ sizeguess(x::Base.IEEEFloat) = Base.Ryu.neededdigits(typeof(x))
 sizeguess(x::AbstractString) = 2 + sizeof(x)
 sizeguess(_) = 512
 
+Structs.lower(::AbstractJSONStyle, ::Missing) = nothing
+Structs.lower(::AbstractJSONStyle, x::Symbol) = String(x)
+Structs.lower(::AbstractJSONStyle, x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType, Type, Logging.LogLevel}) = string(x)
+Structs.lower(::AbstractJSONStyle, x::Regex) = x.pattern
+Structs.lower(::AbstractJSONStyle, x::AbstractArray{<:Any,0}) = x[1]
+Structs.lower(::AbstractJSONStyle, x::AbstractArray{<:Any, N}) where {N} = (view(x, ntuple(_ -> :, N - 1)..., j) for j in axes(x, N))
+Structs.lower(::AbstractJSONStyle, x::AbstractVector) = x
+
 """
     JSONBase.json(x) -> String
     JSONBase.json(io, x)
@@ -18,9 +26,9 @@ For the 3rd method, `file_name` is a `String`, a file will be opened and the JSO
 For the 4th method, a `buf` as a `Vector{UInt8}` is provided, along with an integer `pos` for the position where
 JSON output should start to be written. If the `buf` isn't large enough, it will be `resize!`ed to be large enough.
 
-All methods except the 4th accept `style::JSONStyle` as a keyword argument.
+All methods except the 4th accept `style::AbstractJSONStyle` as a keyword argument.
 The 4th method optionally accepts `style` as a 4th positional argument, defaulting to `JSONBase.DefaultStyle()`.
-Passing a custom style will result in `lower(style, x)` being called, where custom lowerings can be defined
+Passing a custom style will result in `Structs.lower(style, x)` being called, where custom lowerings can be defined
 for a custom style.
 
 All methods except the 4th also accept `allownan::Bool=false` as a keyword argument.
@@ -62,10 +70,10 @@ By default, `x` must be a JSON-serializable object. Supported types include:
 If an object is not JSON-serializable, an override for [`JSONBase.lower`](@ref) can
 be defined to convert it to a JSON-serializable object. Some default `lower` defintions
 are defined in JSONBase itself, for example:
-  * `lower(::Missing) = nothing`
-  * `lower(x::Symbol) = String(x)`
-  * `lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)`
-  * `lower(x::Regex) = x.pattern`
+  * `Structs.lower(::Missing) = nothing`
+  * `Structs.lower(x::Symbol) = String(x)`
+  * `Structs.lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)`
+  * `Structs.lower(x::Regex) = x.pattern`
 
 These allow common Base/stdlib types to be serialized in an expected format.
 
@@ -77,20 +85,20 @@ nor recursive situations. Types should define an appropriate
 function json end
 
 # if jsonlines and pretty is not 0 or false, throw an ArgumentError
-_jsonlines_pretty_check(jsonlines, pretty) = jsonlines && pretty !== false && !iszero(pretty)
 @noinline _jsonlines_pretty_throw() = throw(ArgumentError("pretty printing is not supported when writing jsonlines"))
+_jsonlines_pretty_check(jsonlines, pretty) = jsonlines && pretty !== false && !iszero(pretty) && _jsonlines_pretty_throw()
 
-function json(io::IO, x::T; style::JSONStyle=DefaultStyle(), allownan::Bool=false, jsonlines::Bool=false, pretty::Union{Integer,Bool}=false) where {T}
-    _jsonlines_pretty_check(jsonlines, pretty) && _jsonlines_pretty_throw()
-    y = lower(style, x)
+function json(io::IO, x::T; style::AbstractJSONStyle=JSONStyle(), allownan::Bool=false, jsonlines::Bool=false, pretty::Union{Integer,Bool}=false) where {T}
+    _jsonlines_pretty_check(jsonlines, pretty)
+    y = Structs.lower(style, x)
     buf = Vector{UInt8}(undef, sizeguess(y))
     pos = json!(buf, 1, y, style, allownan, jsonlines, nothing, pretty === true ? 4 : Int(pretty))
     return write(io, resize!(buf, pos - 1))
 end
 
-function json(x; style::JSONStyle=DefaultStyle(), allownan::Bool=false, jsonlines::Bool=false, pretty::Union{Integer,Bool}=false)
-    _jsonlines_pretty_check(jsonlines, pretty) && _jsonlines_pretty_throw()
-    y = lower(style, x)
+function json(x; style::AbstractJSONStyle=JSONStyle(), allownan::Bool=false, jsonlines::Bool=false, pretty::Union{Integer,Bool}=false)
+    _jsonlines_pretty_check(jsonlines, pretty)
+    y = Structs.lower(style, x)
     buf = Base.StringVector(sizeguess(y))
     pos = json!(buf, 1, y, style, allownan, jsonlines, nothing, pretty === true ? 4 : Int(pretty))
     return String(resize!(buf, pos - 1))
@@ -127,8 +135,8 @@ struct WriteClosure{JS, arraylike, T} # T is the type of the parent object/array
     objids::Base.IdSet{Any} # to track circular references
 end
 
-# API.applyeach calls f(::String, val), but we want to call
-# lower(T, ::Symbol, val), so translate here
+# Structs.applyeach calls f(::String, val), but we want to call
+# Structs.lower(T, ::Symbol, val), so translate here
 @generated function fieldsym(::Type{T}, key) where {T}
     ex = quote
         # @show T, key, val
@@ -164,6 +172,10 @@ end
     pos = indent(buf, pos, ind, f.depth)
     # if not an array, we need to write the key + ':'
     if !arraylike
+        tags = Structs.fieldtags(f.style, T, key)
+        if tags !== nothing && haskey(tags, :name)
+            key = tags.name
+        end
         pos = _string(buf, pos, key)
         @checkn 1
         buf[pos] = UInt8(':')
@@ -173,9 +185,9 @@ end
             buf[pos] = UInt8(' ')
             pos += 1
         end
-        lowered = lower(f.style, T, fieldsym(T, key), val)
+        lowered = Structs.lower(f.style, val, Structs.fieldtags(f.style, T, key))
     else
-        lowered = lower(f.style, val)
+        lowered = Structs.lower(f.style, val)
     end
     # check if the lowered value is in our objectid set
     if lowered in f.objids
@@ -196,7 +208,7 @@ end
 @noinline throwjsonlines() = throw(ArgumentError("jsonlines only supported for arraylike"))
 
 # assume x is lowered value
-function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, jsonlines::Bool=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing, ind::Int=0, depth::Int=0)
+function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false, jsonlines::Bool=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing, ind::Int=0, depth::Int=0)
     # string
     if x isa AbstractString
         return _string(buf, pos, x)
@@ -224,12 +236,8 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, jso
     # null
     elseif x === nothing
         return _null(buf, pos)
-    # special-case no-field objects (singletons, primitive types)
-    # if we didn't, they'd just be written as empty objects
-    elseif !arraylike(x) && nfields(x) == 0
-        return _string(buf, pos, x)
     # object or array
-    else
+    elseif Structs.arraylike(x) || Structs.structlike(x)
         # it's notable that we're in an `else` block here; and that
         # we don't actually call something like `objectlike` at all, but just assume
         # anything else is an object/array
@@ -238,8 +246,8 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, jso
         # but, it also means objects might be written in ways that weren't
         # intended; in those cases, it should be determined whether an
         # appropriate `lower` method should be defined (preferred) or perhaps
-        # a custom `API.applyeach` override to provide key-value pairs (more rare)
-        al = arraylike(x)
+        # a custom `Structs.applyeach` override to provide key-value pairs (more rare)
+        al = Structs.arraylike(x)
         if !jsonlines
             @checkn 1
             @inbounds buf[pos] = al ? UInt8('[') : UInt8('{')
@@ -253,7 +261,7 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, jso
         objids = objids === nothing ? Base.IdSet{Any}() : objids
         push!(objids, x)
         c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), ind, depth + 1, style, allownan, jsonlines, objids)
-        GC.@preserve ref API.applyeach(c, x)
+        GC.@preserve ref Structs.applyeach(style, c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
         # in WriteClosure, we eagerly write a comma after each element
@@ -268,6 +276,8 @@ function json!(buf, pos, x, style::JSONStyle=DefaultStyle(), allownan=false, jso
         # even if the input is empty and we're jsonlines, the spec says it's ok to end w/ a newline
         @inbounds buf[pos] = jsonlines ? UInt8('\n') : al ? UInt8(']') : UInt8('}')
         return pos + 1
+    else
+        return _string(buf, pos, x)
     end
 end
 

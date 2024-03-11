@@ -133,7 +133,6 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
 # takes a `keyvalfunc` that is applied to each key/value pair
 # `keyvalfunc` is provided a PtrString => LazyValue pair
 # to materialize the key, call `tostring(key)`
-# this is done automatically in selection syntax via `keyvaltostring` transformer
 # returns a `pos` value that notes the next position where parsing should continue
 @inline function applyobject(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
@@ -150,7 +149,7 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
     b == UInt8('}') && return pos + 1
     while true
         # applystring returns key as a PtrString
-        key, pos = applystring(nothing, LazyValue(buf, pos, JSONTypes.STRING, getopts(x), false))
+        key, pos = _applystring(nothing, LazyValue(buf, pos, JSONTypes.STRING, getopts(x), false))
         @nextbyte
         if b != UInt8(':')
             error = ExpectedColon
@@ -161,12 +160,12 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(key, val)
-        # if ret is an EarlyReturn, then we're short-circuiting
+        # if ret is an Structs.EarlyReturn, then we're short-circuiting
         # parsing via e.g. selection syntax, so return immediately
-        ret isa EarlyReturn && return ret
+        ret isa Structs.EarlyReturn && return ret
         # if keyvalfunc didn't materialize `val` and return an
         # updated `pos`, then we need to skip val ourselves
-        pos = ret isa UpdatedState ? ret.value : skip(val)
+        pos = (ret isa Int && ret > pos) ? ret : skip(val)
         @nextbyte
         # check for terminating conditions
         if b == UInt8('}')
@@ -260,8 +259,8 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(i, val)
-        ret isa EarlyReturn && return ret
-        pos = ret isa UpdatedState ? ret.value : skip(val)
+        ret isa Structs.EarlyReturn && return ret
+        pos = (ret isa Int && ret > pos) ? ret : skip(val)
         if jsonlines
             @jsonlines_checks
         else
@@ -282,6 +281,7 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
     invalid(error, buf, pos, "array")
 end
 
+_applystring(f::F, x::LazyValue) where {F} = applystring(f, x)
 # core JSON string parsing function
 # returns a PtrString and the next position to parse
 # a PtrString is a semi-lazy, internal-only representation
@@ -368,8 +368,7 @@ end
     elseif T == JSONTypes.ARRAY
         return _applyarray(pass, x)
     elseif T == JSONTypes.STRING
-        pos = applystring(pass, x)
-        return pos
+        return _applystring(pass, x)
     elseif T == JSONTypes.NUMBER
         return _applynumber(pass, x)
     elseif T == JSONTypes.TRUE
@@ -383,7 +382,7 @@ end
 
 gettype(::LazyObject) = JSONTypes.OBJECT
 
-Base.length(x::LazyObject) = API.applylength(x)
+Base.length(x::LazyObject) = Structs.applylength(x)
 
 struct IterateObjectClosure
     kvs::Vector{Pair{String, LazyValue}}
@@ -412,11 +411,11 @@ gettype(::LazyArray) = JSONTypes.ARRAY
 
 Base.IndexStyle(::Type{<:LazyArray}) = Base.IndexLinear()
 
-Base.size(x::LazyArray) = (API.applylength(x),)
+Base.size(x::LazyArray) = (Structs.applylength(x),)
 
 Base.isassigned(x::LazyArray, i::Int) = true
 Base.getindex(x::LazyArray, i::Int) = Selectors._getindex(x, i)
-API.applyeach(f, x::LazyArray) = applyarray(f, x)
+Structs.applyeach(f, x::LazyArray) = applyarray(f, x)
 
 function Base.show(io::IO, x::LazyValue)
     T = gettype(x)

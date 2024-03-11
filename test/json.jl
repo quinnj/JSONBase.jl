@@ -5,11 +5,6 @@ mutable struct CircularRef
     self::Union{Nothing, CircularRef}
 end
 
-JSONBase.lower(::Type{ThreeDates}, nm::Symbol, val) =
-    nm == :date ? Dates.format(val, "yyyy_mm_dd") :
-    nm == :datetime ? Dates.format(val, "yyyy/mm/dd HH:MM:SS") :
-    Dates.format(val, "HH/MM/SS")
-
 struct CustomNumber <: Real
     x::Float64
 end
@@ -173,10 +168,8 @@ end
     m[1] = 1.0
     @test JSONBase.json(m) == "1.0"
     # test custom JSONStyle
-    JSONBase.lower(::CustomJSONStyle, x::UUID) = UInt128(x)
+    Structs.lower(::CustomJSONStyle, x::UUID) = UInt128(x)
     @test JSONBase.json(UUID(typemax(UInt128)); style=CustomJSONStyle()) == "340282366920938463463374607431768211455"
-    JSONBase.lower(::CustomJSONStyle, ::Type{N}, key, val) = key == :uuid ? UInt128(val) : JSONBase.lower(val)
-    @test JSONBase.json(N(0, UUID(typemax(UInt128))); style=CustomJSONStyle()) == "{\"id\":0,\"uuid\":340282366920938463463374607431768211455}"
     # JSONBase.json forms
     io = IOBuffer()
     JSONBase.json(io, missing)

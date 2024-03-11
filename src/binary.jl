@@ -171,7 +171,7 @@ end
     # update our nfields
     nfields = readnumber(f.tape, f.tape_nfields, Int32)
     _writenumber(nfields + Int32(1), f.tape, f.tape_nfields)
-    return UpdatedState(pos)
+    return pos
 end
 
 struct BinaryArrayClosure
@@ -188,7 +188,7 @@ end
     # update our nelems
     nelems = readnumber(f.tape, f.tape_nelems, Int32)
     _writenumber(nelems + Int32(1), f.tape, f.tape_nelems)
-    return UpdatedState(pos)
+    return pos
 end
 
 struct BinaryNumberClosure{T}
@@ -512,8 +512,8 @@ end
         key, pos = applystring(nothing, BinaryValue(tape, pos, JSONTypes.STRING))
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(key, b)
-        ret isa EarlyReturn && return ret
-        pos = ret isa UpdatedState ? ret.value : skip(b)
+        ret isa Structs.EarlyReturn && return ret
+        pos = (ret isa Int && ret > pos) ? ret : skip(b)
     end
     return pos
 end
@@ -531,12 +531,13 @@ end
     for i = 1:nfields
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(i, b)
-        ret isa EarlyReturn && return ret
-        pos = ret isa UpdatedState ? ret.value : skip(b)
+        ret isa Structs.EarlyReturn && return ret
+        pos = (ret isa Int && ret > pos) ? ret : skip(b)
     end
     return pos
 end
 
+_applystring(f::F, x::BinaryValue) where {F} = applystring(f, x)
 # return a PtrString for an embedded string in binary format
 # we return a PtrString to allow callers flexibility
 # in how they want to materialize/compare/etc.

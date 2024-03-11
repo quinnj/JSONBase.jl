@@ -18,16 +18,12 @@ Supported syntax includes:
 """
 module Selectors
 
-import ..API: applyeach, EarlyReturn, arraylike, applylength
+using Structs
 import ..PtrString
+import ..tostring
 import ..streq
 
 export List
-
-# this is defined here instead of interfaces.jl because it's not
-# really meant to be overloaded, except for selection syntax
-# i.e. we don't use this anywhere else in the package
-objectlike(x) = false
 
 """
     List(...)
@@ -48,15 +44,15 @@ Base.isassigned(x::List, args::Integer...) = isassigned(items(x), args...)
 Base.push!(x::List, item) = push!(items(x), item)
 Base.append!(x::List, items_to_append) = append!(items(x), items_to_append)
 
-arraylike(::List) = true
+Structs.arraylike(::List) = true
 
-function applyeach(f, x::List)
+function Structs.applyeach(f, x::List)
     # note that there should *never* be #undef
     # values in a list, since we only ever initialize empty
     # then push!/append! to it
     for (i, v) in enumerate(items(x))
         ret = f(i, v)
-        ret isa EarlyReturn && return ret
+        ret isa Structs.EarlyReturn && return ret
     end
     return
 end
@@ -76,14 +72,14 @@ eq(x::PtrString, y::AbstractString) = streq(x, y)
 eq(x::AbstractString, y::PtrString) = streq(y, x)
 
 function _getindex(x, key::Union{KeyInd, Integer})
-    if arraylike(x) && key isa KeyInd
+    if Structs.arraylike(x) && key isa KeyInd
         # indexing an array with a key, so we check
         # each element if it's an object and if the
         # object has the key
         # like a broadcasted getindex over x
         values = List()
-        applyeach(x) do _, item
-            if objectlike(item)
+        Structs.applyeach(x) do _, item
+            if Structs.structlike(item)
                 # if array elements are objects, we do a broadcasted getproperty with `key`
                 # should we try-catch and ignore KeyErrors?
                 push!(values, _getindex(item, key))
@@ -93,14 +89,14 @@ function _getindex(x, key::Union{KeyInd, Integer})
             return
         end
         return values
-    elseif objectlike(x) || arraylike(x)
+    elseif Structs.structlike(x) || Structs.arraylike(x)
         # indexing object w/ key or array w/ index
         # returns a single value
-        ret = applyeach(x) do k, v
-            eq(k, key) && return EarlyReturn(v)
+        ret = Structs.applyeach(x) do k, v
+            eq(k, key) && return Structs.EarlyReturn(v)
             return
         end
-        ret isa EarlyReturn || throw(KeyError(key))
+        ret isa Structs.EarlyReturn || throw(KeyError(key))
         return ret.value
     else
         noselection(x)
@@ -111,7 +107,7 @@ end
 function _getindex(x, ::Colon)
     selectioncheck(x)
     values = List()
-    applyeach(x) do _, v
+    Structs.applyeach(x) do _, v
         push!(values, v)
         return
     end
@@ -125,7 +121,7 @@ _getindex(x::List, ::Colon) = x
 function _getindex(x, inds::Inds)
     selectioncheck(x)
     values = List()
-    applyeach(x) do k, v
+    Structs.applyeach(x) do k, v
         i = findfirst(eq(k), inds)
         i !== nothing && push!(values, v)
         return
@@ -135,11 +131,36 @@ end
 
 # return all values of an object or elements of an array as a List
 # that satisfy a key-value function
-function _getindex(x, ::Colon, f::Base.Callable)
+function _getindex(x, S::Union{typeof(~), Colon}, f::Base.Callable)
     selectioncheck(x)
     values = List()
-    applyeach(x) do k, v
+    Structs.applyeach(x) do k, v
         f(k, v) && push!(values, v)
+        if S == ~
+            if Structs.structlike(v)
+                ret = _getindex(v, ~, f)
+                append!(values, ret)
+            elseif Structs.arraylike(v)
+                ret = _getindex(v, ~, f)
+                append!(values, ret)
+            end
+        end
+        return
+    end
+    return values
+end
+
+function _getindex(x, ::typeof(~), key::KeyInd, val)
+    selectioncheck(x)
+    values = List()
+    Structs.applyeach(x) do k, v
+        if Structs.structlike(v)
+            append!(values, _getindex(v, ~, key, val))
+        elseif Structs.arraylike(v)
+            append!(values, _getindex(v, ~, key, val))
+        elseif eq(k, key) && eq(v[], val)
+            push!(values, x)
+        end
         return
     end
     return values
@@ -149,13 +170,13 @@ end
 # as a single flattened List; or all properties that match key
 function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
     values = List()
-    if objectlike(x)
-        applyeach(x) do k, v
+    if Structs.structlike(x)
+        Structs.applyeach(x) do k, v
             if key === Colon()
                 push!(values, v)
             elseif eq(k, key)
-                if arraylike(v)
-                    applyeach(v) do _, vv
+                if Structs.arraylike(v)
+                    Structs.applyeach(v) do _, vv
                         push!(values, vv)
                         return
                     end
@@ -163,21 +184,21 @@ function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
                     push!(values, v)
                 end
             end
-            if objectlike(v)
+            if Structs.structlike(v)
                 ret = _getindex(v, ~, key)
                 append!(values, ret)
-            elseif arraylike(v)
+            elseif Structs.arraylike(v)
                 ret = _getindex(v, ~, key)
                 append!(values, ret)
             end
             return
         end
-    elseif arraylike(x)
-        applyeach(x) do _, item
-            if objectlike(item)
+    elseif Structs.arraylike(x)
+        Structs.applyeach(x) do _, item
+            if Structs.structlike(item)
                 ret = _getindex(item, ~, key)
                 append!(values, ret)
-            elseif arraylike(item)
+            elseif Structs.arraylike(item)
                 ret = _getindex(item, ~, key)
                 append!(values, ret)
             end
@@ -189,15 +210,15 @@ function _getindex(x, ::typeof(~), key::Union{KeyInd, Colon})
     return values
 end
 
-selectioncheck(x) = objectlike(x) || arraylike(x) || noselection(x)
+selectioncheck(x) = Structs.structlike(x) || Structs.arraylike(x) || noselection(x)
 @noinline noselection(x) = throw(ArgumentError("Selection syntax not defined for: `$(typeof(x))))`"))
 
 # build up propertynames by iterating over each key-value pair
 function _propertynames(x)
     selectioncheck(x)
     nms = Symbol[]
-    applyeach(x) do k, _
-        push!(nms, Symbol(k))
+    Structs.applyeach(x) do k, _
+        push!(nms, tostring(Symbol, k))
         return
     end
     return nms
@@ -209,10 +230,11 @@ macro selectors(T)
         Base.getindex(x::$T, arg) = Selectors._getindex(x, arg)
         Base.getindex(x::$T, ::Colon, arg) = Selectors._getindex(x, :, arg)
         Base.getindex(x::$T, ::typeof(~), arg) = Selectors._getindex(x, ~, arg)
+        Base.getindex(x::$T, ::typeof(~), key, val) = Selectors._getindex(x, ~, key, val)
         Base.getproperty(x::$T, key::Symbol) = Selectors._getindex(x, key)
         Base.propertynames(x::$T) = Selectors._propertynames(x)
         Base.hasproperty(x::$T, key::Symbol) = key in propertynames(x)
-        Base.length(x::$T) = Selectors.applylength(x)
+        Base.length(x::$T) = Selectors.Structs.applylength(x)
     end)
 end
 

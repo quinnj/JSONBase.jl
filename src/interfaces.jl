@@ -54,18 +54,7 @@ struct EarlyReturn{T}
     value::T
 end
 
-"""
-    JSONBase.UpdatedState{T}
 
-A JSONBase-internal wrapper type used to coordinate the lazy and binary
-applyobject/applyarray functions and materialization closures.
-Essentially, while materialization elements, we can keep track of progress made
-while parsing and pass that back to applyobject/applyarray to avoid re-parsing
-or needing to skip over already-parsed elements.
-"""
-struct UpdatedState{T}
-    value::T
-end
 
 @inline function applyeach(f, x::AbstractArray)
     for i in eachindex(x)
@@ -125,36 +114,7 @@ function applyeach(f, x::AbstractDict)
     return
 end
 
-# convenience function that calls API.applyeach on x
-# but applies the function to just the 1st item
-struct ApplyOnce{F}
-    f::F
-end
 
-@inline (f::ApplyOnce)(k, v) = EarlyReturn(f.f(v))
-
-applyonce(f, x) = applyeach(ApplyOnce(f), x)
-
-struct LengthClosure
-    len::Ptr{Int}
-end
-
-# for use in apply* functions
-@inline function (f::LengthClosure)(_, _)
-    cur = unsafe_load(f.len)
-    unsafe_store!(f.len, cur + 1)
-    return
-end
-
-# compute "length" by iterating over each key-value pair
-function applylength(x)
-    ref = Ref(0)
-    lc = LengthClosure(Base.unsafe_convert(Ptr{Int}, ref))
-    GC.@preserve ref begin
-        applyeach(lc, x)
-        return unsafe_load(lc.len)
-    end
-end
 
 """
     JSONBase.fields(T)
@@ -332,8 +292,8 @@ struct DefaultStyle <: JSONStyle end
 """
     JSONBase.lower(x)
     JSONBase.lower(::Type{T}, key, val)
-    JSONBase.lower(::JSONStyle, x)
-    JSONBase.lower(::JSONStyle, ::Type{T}, key, val)
+    JSONBase.lower(::Structs.StructStyle, x)
+    JSONBase.lower(::Structs.StructStyle, ::Type{T}, key, val)
 
 Allow an object `x` to be "lowered" into a JSON-compatible representation.
 The 2nd method allows overloading lower for an object of type `T` for a specific
@@ -369,8 +329,8 @@ lower(x) = x
 lower(::Type{T}, key, val) where {T} = lower(val)
 
 # default style fallbacks
-lower(::JSONStyle, x) = lower(x)
-lower(::JSONStyle, ::Type{T}, key, val) where {T} = lower(T, key, val)
+lower(::Structs.StructStyle, x) = lower(x)
+lower(::Structs.StructStyle, ::Type{T}, key, val) where {T} = lower(T, key, val)
 
 # some default lowerings for common types
 lower(::Missing) = nothing
@@ -384,8 +344,8 @@ lower(x::AbstractVector) = x
 """
     JSONBase.lift(T, x)
     JSONBase.lift(::Type{T}, key, val)
-    JSONBase.lift(::JSONStyle, T, x)
-    JSONBase.lift(::JSONStyle, ::Type{T}, key, val)
+    JSONBase.lift(::Structs.StructStyle, T, x)
+    JSONBase.lift(::Structs.StructStyle, ::Type{T}, key, val)
 
 Allow a JSON-native object `x` to be converted into the custom type `T`.
 This is used to allow for custom types to be constructed directly in the
@@ -429,8 +389,8 @@ lift(::Type{T}, x) where {T} = Base.issingletontype(T) ? T() : convert(T, x)
 lift(::Type{T}, key, val) where {T} = lift(fieldtype(T, key), val)
 
 # default style fallbacks
-lift(::JSONStyle, ::Type{T}, x) where {T} = lift(T, x)
-lift(::JSONStyle, ::Type{T}, key, val) where {T} = lift(T, key, val)
+lift(::Structs.StructStyle, ::Type{T}, x) where {T} = lift(T, x)
+lift(::Structs.StructStyle, ::Type{T}, key, val) where {T} = lift(T, key, val)
 
 # some default lift definitions for common types
 lift(::Type{T}, ::Nothing) where {T >: Missing} = T === Any ? nothing : missing
@@ -454,8 +414,8 @@ end
 """
     JSONBase.choosetype(T, x) -> S
     JSONBase.choosetype(T, key, FT, val) -> S
-    JSONBase.choosetype(::JSONStyle, T, x) -> S
-    JSONBase.choosetype(::JSONStyle, T, key, FT, val) -> S
+    JSONBase.choosetype(::Structs.StructStyle, T, x) -> S
+    JSONBase.choosetype(::Structs.StructStyle, T, key, FT, val) -> S
 
 Interface to allow "choosing" the right type `S` for materialization
 in cases where it would otherwise be ambiguous or unknown.
@@ -508,8 +468,8 @@ function choosetype end
 choosetype(::Type{T}, key, ::Type{FT}, val) where {T, FT} = choosetype(FT, val)
 
 # default style fallbacks
-choosetype(::JSONStyle, ::Type{T}, x) where {T} = choosetype(T, x)
-choosetype(::JSONStyle, ::Type{T}, key, ::Type{FT}, val) where {T, FT} = choosetype(T, key, FT, val)
+choosetype(::Structs.StructStyle, ::Type{T}, x) where {T} = choosetype(T, x)
+choosetype(::Structs.StructStyle, ::Type{T}, key, ::Type{FT}, val) where {T, FT} = choosetype(T, key, FT, val)
 
 """
     JSONBase.arraylike(x)
