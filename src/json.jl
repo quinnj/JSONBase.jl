@@ -172,9 +172,11 @@ end
     pos = indent(buf, pos, ind, f.depth)
     # if not an array, we need to write the key + ':'
     if !arraylike
-        tags = Structs.fieldtags(f.style, T, key)
-        if tags !== nothing && haskey(tags, :name)
-            key = tags.name
+        if key isa Symbol
+            tags = Structs.fieldtags(f.style, T, key)
+            if tags !== nothing && haskey(tags, :name)
+                key = tags.name
+            end
         end
         pos = _string(buf, pos, key)
         @checkn 1
