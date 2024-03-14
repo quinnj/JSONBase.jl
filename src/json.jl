@@ -177,6 +177,8 @@ end
             if tags !== nothing && haskey(tags, :name)
                 key = tags.name
             end
+        else
+            tags = nothing
         end
         pos = _string(buf, pos, key)
         @checkn 1
@@ -187,7 +189,7 @@ end
             buf[pos] = UInt8(' ')
             pos += 1
         end
-        lowered = Structs.lower(f.style, val, Structs.fieldtags(f.style, T, key))
+        lowered = Structs.lower(f.style, val, tags)
     else
         lowered = Structs.lower(f.style, val)
     end
