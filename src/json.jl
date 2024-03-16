@@ -135,23 +135,6 @@ struct WriteClosure{JS, arraylike, T} # T is the type of the parent object/array
     objids::Base.IdSet{Any} # to track circular references
 end
 
-# Structs.applyeach calls f(::String, val), but we want to call
-# Structs.lower(T, ::Symbol, val), so translate here
-@generated function fieldsym(::Type{T}, key) where {T}
-    ex = quote
-        # @show T, key, val
-    end
-    if key == String
-        for i = 1:fieldcount(T)
-            fnm = fieldname(T, i)
-            nm = String(fnm)
-            push!(ex.args, :(key == $nm && return $(Meta.quot(fnm))))
-        end
-    end
-    push!(ex.args, :(return key))
-    return ex
-end
-
 @inline function indent(buf, pos, ind, depth)
     if ind > 0
         n = ind * depth + 1
@@ -172,14 +155,6 @@ end
     pos = indent(buf, pos, ind, f.depth)
     # if not an array, we need to write the key + ':'
     if !arraylike
-        if key isa Symbol
-            tags = Structs.fieldtags(f.style, T, key)
-            if tags !== nothing && haskey(tags, :name)
-                key = tags.name
-            end
-        else
-            tags = nothing
-        end
         pos = _string(buf, pos, key)
         @checkn 1
         buf[pos] = UInt8(':')
@@ -189,17 +164,14 @@ end
             buf[pos] = UInt8(' ')
             pos += 1
         end
-        lowered = Structs.lower(f.style, val, tags)
-    else
-        lowered = Structs.lower(f.style, val)
     end
     # check if the lowered value is in our objectid set
-    if lowered in f.objids
+    if val in f.objids
         # if so, it's a circular reference! so we just write `null`
         pos = _null(buf, pos)
     else
         # note that jsonlines is hard-coded as false here because you can't recursively print jsonlines
-        pos = json!(buf, pos, lowered, f.style, f.allownan, false, f.objids, ind, f.depth)
+        pos = json!(buf, pos, val, f.style, f.allownan, false, f.objids, ind, f.depth)
     end
     @checkn 1
     @inbounds buf[pos] = f.jsonlines ? UInt8('\n') : UInt8(',')

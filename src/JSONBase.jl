@@ -27,7 +27,7 @@ const Values = Union{LazyValue, BinaryValue}
 
 # allow LazyValue/BinaryValue to participate in
 # selection syntax by overloading applyeach
-@inline function Structs.applyeach(f, x::Values)
+@inline function Structs.applyeach(::Structs.StructStyle, f, x::Values)
     if gettype(x) == JSONTypes.OBJECT
         return applyobject(f, x)
     elseif gettype(x) == JSONTypes.ARRAY
