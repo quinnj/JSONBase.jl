@@ -10,6 +10,8 @@ include("utils.jl")
 abstract type AbstractJSONStyle <: Structs.StructStyle end
 struct JSONStyle{ObjectType} <: AbstractJSONStyle end
 
+Structs.fieldtagkey(::Type{<:JSONStyle}) = :json
+
 objecttype(::JSONStyle{ObjectType}) where {ObjectType} = ObjectType
 
 const DEFAULT_OBJECT_TYPE = Dict{String, Any}
