@@ -306,8 +306,10 @@ function escapelength(str)
     return x
 end
 
-# this definition is really for object keys that may not be AbstractSTring
+# this definition is really for object keys that may not be AbstractString
 @inline _string(buf, pos, x) = _string(buf, pos, string(x))
+@inline _string(buf, pos, x::Values) = _string(buf, pos, getindex(x))
+@inline _string(buf, pos, x::PtrString) = _string(buf, pos, tostring(String, x))
 
 @inline function _string(buf, pos, x::AbstractString)
     sz = ncodeunits(x)
