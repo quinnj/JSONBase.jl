@@ -1,4 +1,4 @@
-using Structs, JSONBase, Chairmarks, Profile, JSON, JSON3, Test, UUIDs, Dates, OrderedCollections
+using StructUtils, JSONBase, Chairmarks, Profile, JSON, JSON3, Test, UUIDs, Dates, OrderedCollections
 
 struct A
   a::Int

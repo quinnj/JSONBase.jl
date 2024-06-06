@@ -292,8 +292,8 @@ struct DefaultStyle <: JSONStyle end
 """
     JSONBase.lower(x)
     JSONBase.lower(::Type{T}, key, val)
-    JSONBase.lower(::Structs.StructStyle, x)
-    JSONBase.lower(::Structs.StructStyle, ::Type{T}, key, val)
+    JSONBase.lower(::StructUtils.StructStyle, x)
+    JSONBase.lower(::StructUtils.StructStyle, ::Type{T}, key, val)
 
 Allow an object `x` to be "lowered" into a JSON-compatible representation.
 The 2nd method allows overloading lower for an object of type `T` for a specific
@@ -329,8 +329,8 @@ lower(x) = x
 lower(::Type{T}, key, val) where {T} = lower(val)
 
 # default style fallbacks
-lower(::Structs.StructStyle, x) = lower(x)
-lower(::Structs.StructStyle, ::Type{T}, key, val) where {T} = lower(T, key, val)
+lower(::StructUtils.StructStyle, x) = lower(x)
+lower(::StructUtils.StructStyle, ::Type{T}, key, val) where {T} = lower(T, key, val)
 
 # some default lowerings for common types
 lower(::Missing) = nothing
@@ -344,8 +344,8 @@ lower(x::AbstractVector) = x
 """
     JSONBase.lift(T, x)
     JSONBase.lift(::Type{T}, key, val)
-    JSONBase.lift(::Structs.StructStyle, T, x)
-    JSONBase.lift(::Structs.StructStyle, ::Type{T}, key, val)
+    JSONBase.lift(::StructUtils.StructStyle, T, x)
+    JSONBase.lift(::StructUtils.StructStyle, ::Type{T}, key, val)
 
 Allow a JSON-native object `x` to be converted into the custom type `T`.
 This is used to allow for custom types to be constructed directly in the
@@ -389,8 +389,8 @@ lift(::Type{T}, x) where {T} = Base.issingletontype(T) ? T() : convert(T, x)
 lift(::Type{T}, key, val) where {T} = lift(fieldtype(T, key), val)
 
 # default style fallbacks
-lift(::Structs.StructStyle, ::Type{T}, x) where {T} = lift(T, x)
-lift(::Structs.StructStyle, ::Type{T}, key, val) where {T} = lift(T, key, val)
+lift(::StructUtils.StructStyle, ::Type{T}, x) where {T} = lift(T, x)
+lift(::StructUtils.StructStyle, ::Type{T}, key, val) where {T} = lift(T, key, val)
 
 # some default lift definitions for common types
 lift(::Type{T}, ::Nothing) where {T >: Missing} = T === Any ? nothing : missing
@@ -414,8 +414,8 @@ end
 """
     JSONBase.choosetype(T, x) -> S
     JSONBase.choosetype(T, key, FT, val) -> S
-    JSONBase.choosetype(::Structs.StructStyle, T, x) -> S
-    JSONBase.choosetype(::Structs.StructStyle, T, key, FT, val) -> S
+    JSONBase.choosetype(::StructUtils.StructStyle, T, x) -> S
+    JSONBase.choosetype(::StructUtils.StructStyle, T, key, FT, val) -> S
 
 Interface to allow "choosing" the right type `S` for materialization
 in cases where it would otherwise be ambiguous or unknown.
@@ -468,8 +468,8 @@ function choosetype end
 choosetype(::Type{T}, key, ::Type{FT}, val) where {T, FT} = choosetype(FT, val)
 
 # default style fallbacks
-choosetype(::Structs.StructStyle, ::Type{T}, x) where {T} = choosetype(T, x)
-choosetype(::Structs.StructStyle, ::Type{T}, key, ::Type{FT}, val) where {T, FT} = choosetype(T, key, FT, val)
+choosetype(::StructUtils.StructStyle, ::Type{T}, x) where {T} = choosetype(T, x)
+choosetype(::StructUtils.StructStyle, ::Type{T}, key, ::Type{FT}, val) where {T, FT} = choosetype(T, key, FT, val)
 
 """
     JSONBase.arraylike(x)

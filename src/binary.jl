@@ -512,7 +512,7 @@ end
         key, pos = applystring(nothing, BinaryValue(tape, pos, JSONTypes.STRING))
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(key, b)
-        ret isa Structs.EarlyReturn && return ret
+        ret isa StructUtils.EarlyReturn && return ret
         pos = (ret isa Int && ret > pos) ? ret : skip(b)
     end
     return pos
@@ -531,7 +531,7 @@ end
     for i = 1:nfields
         b = BinaryValue(tape, pos, gettype(tape, pos))
         ret = keyvalfunc(i, b)
-        ret isa Structs.EarlyReturn && return ret
+        ret isa StructUtils.EarlyReturn && return ret
         pos = (ret isa Int && ret > pos) ? ret : skip(b)
     end
     return pos

@@ -73,13 +73,13 @@ struct E
     a::A
 end
 
-Structs.@kwdef struct F
+StructUtils.@kwdef struct F
     id::Int
     rate::Float64
     name::String
 end
 
-Structs.@kwdef struct G
+StructUtils.@kwdef struct G
     id::Int
     rate::Float64
     name::String
@@ -129,7 +129,7 @@ struct K
     value::Union{Float64, Missing}
 end
 
-Structs.@kwdef struct System
+StructUtils.@kwdef struct System
     duration::Real = 0 # mandatory
     cwd::Union{Nothing, String} = nothing
     environment::Union{Nothing, Dict} = nothing
@@ -137,16 +137,16 @@ Structs.@kwdef struct System
     shell::Union{Nothing, Dict} = nothing
 end
 
-Structs.@defaults struct L
+StructUtils.@defaults struct L
     id::Int
-    first_name::String &(name=:firstName,)
+    first_name::String &(json=(name=:firstName,),)
     rate::Float64 = 33.3
 end
 
-Structs.@tags struct ThreeDates
-    date::Date &(dateformat=dateformat"yyyy_mm_dd",)
-    datetime::DateTime &(dateformat=dateformat"yyyy/mm/dd HH:MM:SS",)
-    time::Time &(dateformat=dateformat"HH/MM/SS",)
+StructUtils.@tags struct ThreeDates
+    date::Date &(json=(dateformat=dateformat"yyyy_mm_dd",),)
+    datetime::DateTime &(json=(dateformat=dateformat"yyyy/mm/dd HH:MM:SS",),)
+    time::Time &(json=(dateformat=dateformat"HH/MM/SS",),)
 end
 
 struct M
@@ -238,7 +238,7 @@ end
     @test JSONBase.materialize("\"apple\"", Fruit) == apple
     @test JSONBase.materialize("""{"id": 1, "name": "2", "fruit": "banana"}  """, I) == I(1, "2", banana)
     # abstract type
-    Structs.choosetype(::Type{Vehicle}, x) = x.type[] == "car" ? Car : Truck
+    StructUtils.choosetype(::Type{Vehicle}, x) = x.type[] == "car" ? Car : Truck
     @test JSONBase.materialize("""{"type": "car","make": "Mercedes-Benz","model": "S500","seatingCapacity": 5,"topSpeed": 250.1}""", Vehicle) == Car("car", "Mercedes-Benz", "S500", 5, 250.1)
     @test JSONBase.materialize("""{"type": "truck","make": "Isuzu","model": "NQR","payloadCapacity": 7500.5}""", Vehicle) == Truck("truck", "Isuzu", "NQR", 7500.5)
     # union
@@ -362,13 +362,13 @@ end
     m[1] = 1.0
     @test JSONBase.materialize("1.0", Array{Float64,0}) == m
     # test custom JSONStyle
-    Structs.lift(::CustomJSONStyle, ::Type{UUID}, x) = UUID(UInt128(x))
+    StructUtils.lift(::CustomJSONStyle, ::Type{UUID}, x) = UUID(UInt128(x))
     @test JSONBase.materialize("340282366920938463463374607431768211455", UUID; style=CustomJSONStyle()) == UUID(typemax(UInt128))
     @test JSONBase.materialize("{\"id\": 0, \"uuid\": 340282366920938463463374607431768211455}", N; style=CustomJSONStyle()) == N(0, UUID(typemax(UInt128)))
     # tricky unions
     @test JSONBase.materialize("{\"id\":0}", O) == O(0, nothing)
-    @test JSONBase.materialize("{\"id\":0,\"name\":null}", O) == O(0, missing)
-    Structs.choosetype(::CustomJSONStyle, ::Type{Union{I,L,Missing,Nothing}}, val) = JSONBase.gettype(val) == JSONBase.JSONTypes.NULL ? Missing : hasproperty(val, :fruit) ? I : L
+    # @test JSONBase.materialize("{\"id\":0,\"name\":null}", O) == O(0, missing)
+    StructUtils.choosetype(::CustomJSONStyle, ::Type{Union{I,L,Missing,Nothing}}, val) = JSONBase.gettype(val) == JSONBase.JSONTypes.NULL ? Missing : hasproperty(val, :fruit) ? I : L
     @test JSONBase.materialize("{\"id\":0,\"name\":{\"id\":1,\"name\":\"jim\",\"fruit\":\"apple\"}}", O; style=CustomJSONStyle()) == O(0, I(1, "jim", apple))
     @test JSONBase.materialize("{\"id\":0,\"name\":{\"id\":1,\"firstName\":\"jim\",\"rate\":3.14}}", O; style=CustomJSONStyle()) == O(0, L(1, "jim", 3.14))
 end

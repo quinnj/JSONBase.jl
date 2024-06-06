@@ -111,7 +111,7 @@ end
 Base.isassigned(x::BinaryArray, i::Int) = true
 
 Base.getindex(x::BinaryArray, i::Int) = Selectors._getindex(x, i)
-Structs.applyeach(f, x::BinaryArray) = applyarray(f, x)
+StructUtils.applyeach(f, x::BinaryArray) = applyarray(f, x)
 
 function Base.show(io::IO, x::BinaryValue)
     T = gettype(x)

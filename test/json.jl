@@ -168,7 +168,7 @@ end
     m[1] = 1.0
     @test JSONBase.json(m) == "1.0"
     # test custom JSONStyle
-    Structs.lower(::CustomJSONStyle, x::UUID) = UInt128(x)
+    StructUtils.lower(::CustomJSONStyle, x::UUID) = UInt128(x)
     @test JSONBase.json(UUID(typemax(UInt128)); style=CustomJSONStyle()) == "340282366920938463463374607431768211455"
     # JSONBase.json forms
     io = IOBuffer()

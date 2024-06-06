@@ -67,17 +67,17 @@ materialize(buf::Union{AbstractVector{UInt8}, AbstractString}, ::Type{T}=Any; di
 materialize!(buf::Union{AbstractVector{UInt8}, AbstractString}, x; dicttype::Type{O}=DEFAULT_OBJECT_TYPE, style::AbstractJSONStyle=JSONReadStyle{dicttype}(), kw...) where {O} =
     materialize!(lazy(buf; kw...), x, style)
 
-materialize!(x::Values, ::Type{T}, style::AbstractJSONStyle) where {T} = Structs.make!(style, T, x)
-materialize!(x::Values, y::T, style::AbstractJSONStyle) where {T} = Structs.make!(style, y, x)
+materialize!(x::Values, ::Type{T}, style::AbstractJSONStyle) where {T} = StructUtils.make!(style, T, x)
+materialize!(x::Values, y::T, style::AbstractJSONStyle) where {T} = StructUtils.make!(style, y, x)
 
 abstract type AbstractJSONReadStyle <: AbstractJSONStyle end
 struct JSONReadStyle{ObjectType} <: AbstractJSONReadStyle end
 
 objecttype(::JSONReadStyle{OT}) where {OT} = OT
 
-Structs.arraylike(::AbstractJSONReadStyle, ::Type{<:Tuple}) = false
+StructUtils.arraylike(::AbstractJSONReadStyle, ::Type{<:Tuple}) = false
 
-@inline function Structs.choosetype(f::F, style::AbstractJSONStyle, ::Type{Any}, x::Values, tags) where {F}
+@inline function StructUtils.choosetype(f::F, style::AbstractJSONStyle, ::Type{Any}, x::Values, tags) where {F}
     # generic materialization, choose appropriate default type
     type = gettype(x)
     if type == JSONTypes.OBJECT
@@ -102,8 +102,8 @@ Structs.arraylike(::AbstractJSONReadStyle, ::Type{<:Tuple}) = false
 end
 
 @inline function materialize(x::LazyValue, ::Type{T}=Any; dicttype::Type{O}=DEFAULT_OBJECT_TYPE, style::AbstractJSONStyle=JSONReadStyle{dicttype}()) where {T, O}
-    vc = Structs.ValueClosure{T}()
-    pos = Structs.make(vc, style, T, x)
+    vc = StructUtils.ValueClosure{T}()
+    pos = StructUtils.make(vc, style, T, x)
     getisroot(x) && checkendpos(x, T, pos)
     return vc.x
 end
@@ -129,7 +129,7 @@ end
 end
 
 function materialize(x::BinaryValue, ::Type{T}=Any; dicttype::Type{O}=DEFAULT_OBJECT_TYPE, style::AbstractJSONStyle=JSONReadStyle{dicttype}()) where {T, O}
-    return Structs.make(style, T, x)
+    return StructUtils.make(style, T, x)
 end
 
 mutable struct LiftClosure{T, JS, TG, F}
@@ -139,12 +139,12 @@ mutable struct LiftClosure{T, JS, TG, F}
     LiftClosure{T}(style::JS, tags::TG, f::F) where {T, JS, TG, F} = new{T, JS, TG, F}(style, tags, f)
 end
 
-@inline (f::LiftClosure{T, JS, TG, F})(x) where {T, JS, TG, F} = Structs.lift(f.f, f.style, T, x, f.tags)
-@inline (f::LiftClosure{T, JS, F})(x::PtrString) where {T, JS, F} = Structs.lift(f.f, f.style, T, tostring(T, x), f.tags)
+@inline (f::LiftClosure{T, JS, TG, F})(x) where {T, JS, TG, F} = StructUtils.lift(f.f, f.style, T, x, f.tags)
+@inline (f::LiftClosure{T, JS, F})(x::PtrString) where {T, JS, F} = StructUtils.lift(f.f, f.style, T, tostring(T, x), f.tags)
 
-@inline Structs.lift(f::F, style::AbstractJSONStyle, ::Type{T}, x::PtrString, tags) where {F, T} = Structs.lift(f, style, T, tostring(T, x), tags)
+@inline StructUtils.lift(f::F, style::AbstractJSONStyle, ::Type{T}, x::PtrString, tags) where {F, T} = StructUtils.lift(f, style, T, tostring(T, x), tags)
 
-@inline function Structs.lift(f::F, style::AbstractJSONStyle, ::Type{T}, x::Values, tags::TG) where {F, T, TG}
+@inline function StructUtils.lift(f::F, style::AbstractJSONStyle, ::Type{T}, x::Values, tags::TG) where {F, T, TG}
     y = LiftClosure{T}(style, tags, f)
     type = gettype(x)
     if type == JSONTypes.STRING

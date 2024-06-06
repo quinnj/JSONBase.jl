@@ -177,6 +177,8 @@ _symbol(ptr, len) = ccall(:jl_symbol_n, Ref{Symbol}, (Ptr{UInt8}, Int), ptr, len
 
 tostring(::Type{Symbol}, x::PtrString) = x.escaped ? Symbol(tostring(String, x)) : _symbol(x.ptr, x.len)
 
+StructUtils.Selectors.tosymbol(x::PtrString) = tostring(Symbol, x)
+
 function tostring(::Type{T}, x::PtrString) where {T <: Enum}
     sym = tostring(Symbol, x)
     for (k, v) in Base.Enums.namemap(T)
@@ -195,8 +197,9 @@ end
 
 streq(x::PtrString, y::PtrString) = x.len == y.len && ccall(:memcmp, Cint, (Ptr{UInt8}, Ptr{UInt8}, Csize_t), x.ptr, y.ptr, x.len) == 0
 
-# allows comparing PtrString to String in Structs.makestruct to avoid allocating a String from PtrString
-Structs.keyeq(x::PtrString, y::String) = streq(x, y)
+# allows comparing PtrString to String in StructUtils.makestruct to avoid allocating a String from PtrString
+StructUtils.keyeq(x::PtrString, y::String) = streq(x, y)
+StructUtils.keyeq(x::PtrString, y::Symbol) = tostring(Symbol, x) === y
 
 # unsafe because we're not checking that src or dst are valid pointers
 # NOR are we checking that up to `n` bytes after dst are also valid to write to

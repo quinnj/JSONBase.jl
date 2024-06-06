@@ -6,13 +6,13 @@ sizeguess(x::Base.IEEEFloat) = Base.Ryu.neededdigits(typeof(x))
 sizeguess(x::AbstractString) = 2 + sizeof(x)
 sizeguess(_) = 512
 
-Structs.lower(::AbstractJSONStyle, ::Missing) = nothing
-Structs.lower(::AbstractJSONStyle, x::Symbol) = String(x)
-Structs.lower(::AbstractJSONStyle, x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType, Type, Logging.LogLevel}) = string(x)
-Structs.lower(::AbstractJSONStyle, x::Regex) = x.pattern
-Structs.lower(::AbstractJSONStyle, x::AbstractArray{<:Any,0}) = x[1]
-Structs.lower(::AbstractJSONStyle, x::AbstractArray{<:Any, N}) where {N} = (view(x, ntuple(_ -> :, N - 1)..., j) for j in axes(x, N))
-Structs.lower(::AbstractJSONStyle, x::AbstractVector) = x
+StructUtils.lower(::AbstractJSONStyle, ::Missing) = nothing
+StructUtils.lower(::AbstractJSONStyle, x::Symbol) = String(x)
+StructUtils.lower(::AbstractJSONStyle, x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType, Type, Logging.LogLevel}) = string(x)
+StructUtils.lower(::AbstractJSONStyle, x::Regex) = x.pattern
+StructUtils.lower(::AbstractJSONStyle, x::AbstractArray{<:Any,0}) = x[1]
+StructUtils.lower(::AbstractJSONStyle, x::AbstractArray{<:Any, N}) where {N} = (view(x, ntuple(_ -> :, N - 1)..., j) for j in axes(x, N))
+StructUtils.lower(::AbstractJSONStyle, x::AbstractVector) = x
 
 """
     JSONBase.json(x) -> String
@@ -28,7 +28,7 @@ JSON output should start to be written. If the `buf` isn't large enough, it will
 
 All methods except the 4th accept `style::AbstractJSONStyle` as a keyword argument.
 The 4th method optionally accepts `style` as a 4th positional argument, defaulting to `JSONBase.DefaultStyle()`.
-Passing a custom style will result in `Structs.lower(style, x)` being called, where custom lowerings can be defined
+Passing a custom style will result in `StructUtils.lower(style, x)` being called, where custom lowerings can be defined
 for a custom style.
 
 All methods except the 4th also accept `allownan::Bool=false` as a keyword argument.
@@ -70,10 +70,10 @@ By default, `x` must be a JSON-serializable object. Supported types include:
 If an object is not JSON-serializable, an override for [`JSONBase.lower`](@ref) can
 be defined to convert it to a JSON-serializable object. Some default `lower` defintions
 are defined in JSONBase itself, for example:
-  * `Structs.lower(::Missing) = nothing`
-  * `Structs.lower(x::Symbol) = String(x)`
-  * `Structs.lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)`
-  * `Structs.lower(x::Regex) = x.pattern`
+  * `StructUtils.lower(::Missing) = nothing`
+  * `StructUtils.lower(x::Symbol) = String(x)`
+  * `StructUtils.lower(x::Union{Enum, AbstractChar, VersionNumber, Cstring, Cwstring, UUID, Dates.TimeType}) = string(x)`
+  * `StructUtils.lower(x::Regex) = x.pattern`
 
 These allow common Base/stdlib types to be serialized in an expected format.
 
@@ -90,7 +90,7 @@ _jsonlines_pretty_check(jsonlines, pretty) = jsonlines && pretty !== false && !i
 
 function json(io::IO, x::T; style::AbstractJSONStyle=JSONStyle(), allownan::Bool=false, jsonlines::Bool=false, pretty::Union{Integer,Bool}=false) where {T}
     _jsonlines_pretty_check(jsonlines, pretty)
-    y = Structs.lower(style, x)
+    y = StructUtils.lower(style, x)
     buf = Vector{UInt8}(undef, sizeguess(y))
     pos = json!(buf, 1, y, style, allownan, jsonlines, nothing, pretty === true ? 4 : Int(pretty))
     return write(io, resize!(buf, pos - 1))
@@ -98,7 +98,7 @@ end
 
 function json(x; style::AbstractJSONStyle=JSONStyle(), allownan::Bool=false, jsonlines::Bool=false, pretty::Union{Integer,Bool}=false)
     _jsonlines_pretty_check(jsonlines, pretty)
-    y = Structs.lower(style, x)
+    y = StructUtils.lower(style, x)
     buf = Base.StringVector(sizeguess(y))
     pos = json!(buf, 1, y, style, allownan, jsonlines, nothing, pretty === true ? 4 : Int(pretty))
     return String(resize!(buf, pos - 1))
@@ -213,7 +213,7 @@ function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false
     elseif x === nothing
         return _null(buf, pos)
     # object or array
-    elseif Structs.arraylike(x) || Structs.structlike(x)
+    elseif StructUtils.arraylike(x) || StructUtils.structlike(x)
         # it's notable that we're in an `else` block here; and that
         # we don't actually call something like `objectlike` at all, but just assume
         # anything else is an object/array
@@ -222,8 +222,8 @@ function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false
         # but, it also means objects might be written in ways that weren't
         # intended; in those cases, it should be determined whether an
         # appropriate `lower` method should be defined (preferred) or perhaps
-        # a custom `Structs.applyeach` override to provide key-value pairs (more rare)
-        al = Structs.arraylike(x)
+        # a custom `StructUtils.applyeach` override to provide key-value pairs (more rare)
+        al = StructUtils.arraylike(x)
         if !jsonlines
             @checkn 1
             @inbounds buf[pos] = al ? UInt8('[') : UInt8('{')
@@ -237,7 +237,7 @@ function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false
         objids = objids === nothing ? Base.IdSet{Any}() : objids
         push!(objids, x)
         c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), ind, depth + 1, style, allownan, jsonlines, objids)
-        GC.@preserve ref Structs.applyeach(style, c, x)
+        GC.@preserve ref StructUtils.applyeach(style, c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
         # in WriteClosure, we eagerly write a comma after each element

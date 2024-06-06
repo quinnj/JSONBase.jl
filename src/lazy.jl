@@ -160,9 +160,9 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(key, val)
-        # if ret is an Structs.EarlyReturn, then we're short-circuiting
+        # if ret is an StructUtils.EarlyReturn, then we're short-circuiting
         # parsing via e.g. selection syntax, so return immediately
-        ret isa Structs.EarlyReturn && return ret
+        ret isa StructUtils.EarlyReturn && return ret
         # if keyvalfunc didn't materialize `val` and return an
         # updated `pos`, then we need to skip val ourselves
         pos = (ret isa Int && ret > pos) ? ret : skip(val)
@@ -259,7 +259,7 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
         # we're now positioned at the start of the value
         val = lazy(buf, pos, len, b, opts)
         ret = keyvalfunc(i, val)
-        ret isa Structs.EarlyReturn && return ret
+        ret isa StructUtils.EarlyReturn && return ret
         pos = (ret isa Int && ret > pos) ? ret : skip(val)
         if jsonlines
             @jsonlines_checks
@@ -382,7 +382,7 @@ end
 
 gettype(::LazyObject) = JSONTypes.OBJECT
 
-Base.length(x::LazyObject) = Structs.applylength(x)
+Base.length(x::LazyObject) = StructUtils.applylength(x)
 
 struct IterateObjectClosure
     kvs::Vector{Pair{String, LazyValue}}
@@ -411,11 +411,11 @@ gettype(::LazyArray) = JSONTypes.ARRAY
 
 Base.IndexStyle(::Type{<:LazyArray}) = Base.IndexLinear()
 
-Base.size(x::LazyArray) = (Structs.applylength(x),)
+Base.size(x::LazyArray) = (StructUtils.applylength(x),)
 
 Base.isassigned(x::LazyArray, i::Int) = true
 Base.getindex(x::LazyArray, i::Int) = Selectors._getindex(x, i)
-Structs.applyeach(f, x::LazyArray) = applyarray(f, x)
+StructUtils.applyeach(f, x::LazyArray) = applyarray(f, x)
 
 function Base.show(io::IO, x::LazyValue)
     T = gettype(x)

@@ -1,14 +1,13 @@
 name = "JSONBase"
 uuid = "2e7fc8d9-e5f8-4569-a7b1-cf20c7cf9c71"
 version = "1.0.0"
-manifest = "../Manifest.toml"
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
 Parsers = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-Structs = "ec057cc2-7a8d-4b58-b3b3-92acb9f63b42"
+StructUtils = "ec057cc2-7a8d-4b58-b3b3-92acb9f63b42"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [compat]

@@ -1,4 +1,4 @@
-using Test, JSONBase, Structs, UUIDs, Dates, OrderedCollections
+using Test, JSONBase, StructUtils, UUIDs, Dates, OrderedCollections
 
 # helper struct for testing reading json from files
 struct File end
@@ -42,7 +42,7 @@ end
     @test isempty(x) && typeof(x) == Dict{String, Any}
     @test_throws ArgumentError JSONBase.materialize(JSONBase.LazyValue(".", 1, JSONBase.JSONTypes.OBJECT, JSONBase.OPTIONS, true))
     x = JSONBase.lazy("1")
-    @test_throws ArgumentError Structs.applyeach((k, v) -> nothing, x)
+    @test_throws ArgumentError StructUtils.applyeach((k, v) -> nothing, x)
     x = JSONBase.materialize("{\"a\": 1}")
     @test !isempty(x) && x["a"] == 1 && typeof(x) == Dict{String, Any}
     x = JSONBase.materialize("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
@@ -217,11 +217,6 @@ end
         @test JSONBase.tostring(String, s) == "abc"
     end == 5
     pstr, _ = JSONBase.applystring(nothing, x)
-    @test JSONBase.Selectors.eq(:abc, "abc")
-    @test JSONBase.Selectors.eq(:abc, pstr)
-    @test JSONBase.Selectors.eq(pstr, :abc)
-    @test JSONBase.Selectors.eq(pstr, pstr)
-    @test JSONBase.Selectors.eq("abc", pstr)
     # BinaryObject with all possible JSON types
     x = JSONBase.binary("{\"a\": 1, \"b\": null, \"c\": true, \"d\": false, \"e\": \"\", \"f\": [], \"g\": {}}")
     @test length(x) == 7
