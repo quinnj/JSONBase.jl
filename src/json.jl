@@ -14,6 +14,13 @@ StructUtils.lower(::AbstractJSONStyle, x::AbstractArray{<:Any,0}) = x[1]
 StructUtils.lower(::AbstractJSONStyle, x::AbstractArray{<:Any, N}) where {N} = (view(x, ntuple(_ -> :, N - 1)..., j) for j in axes(x, N))
 StructUtils.lower(::AbstractJSONStyle, x::AbstractVector) = x
 
+include_nonempty(::Type{T}) where {T} = true
+include_nonempty(::AbstractJSONStyle, ::Type{T}) where {T} = include_nonempty(T)
+
+is_empty(x) = false
+is_empty(::Nothing) = true
+is_empty(x::Union{AbstractDict, AbstractArray, AbstractString, Tuple, NamedTuple}) = Base.isempty(x)
+
 """
     JSONBase.json(x) -> String
     JSONBase.json(io, x)
@@ -149,6 +156,7 @@ end
 end
 
 @inline function (f::WriteClosure{JS, arraylike, T})(key, val) where {JS, arraylike, T}
+    include_nonempty(f.style, T) && is_empty(val) && return
     pos = unsafe_load(f.pos)
     buf = f.buf
     ind = f.indent
