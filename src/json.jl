@@ -174,7 +174,7 @@ end
         end
     end
     # check if the lowered value is in our objectid set
-    if val in f.objids
+    if ismutabletype(typeof(val)) && val in f.objids
         # if so, it's a circular reference! so we just write `null`
         pos = _null(buf, pos)
     else
@@ -243,7 +243,7 @@ function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false
         ref = Ref(pos)
         # use an IdSet to keep track of circular references
         objids = objids === nothing ? Base.IdSet{Any}() : objids
-        push!(objids, x)
+        ismutabletype(typeof(x)) && push!(objids, x)
         c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), ind, depth + 1, style, allownan, jsonlines, objids)
         GC.@preserve ref StructUtils.applyeach(style, c, x)
         # get updated pos
