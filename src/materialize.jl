@@ -177,3 +177,14 @@ end
         throw(ArgumentError("cannot lift $x to $T"))
     end
 end
+
+struct RawJson
+    value::String
+end
+
+function StructUtils.applymake(f::F, ::StructUtils.StructStyle, ::Type{RawJson}, source::LazyValues, tags=(;)) where {F}
+    buf = getbuf(source)
+    pos = getpos(source)
+    endpos = skip(source)
+    return GC.@preserve buf f(RawJson(unsafe_string(pointer(buf, pos), endpos - pos)))
+end
