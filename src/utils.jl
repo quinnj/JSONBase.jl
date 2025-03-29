@@ -144,7 +144,7 @@ conversion method that can avoid the `String` intermediate + allocation.
 function tostring end
 
 # Base.String's overload of tostring
-@inline function tostring(::Type{String}, x::PtrString)
+function tostring(::Type{String}, x::PtrString)
     if x.escaped
         str = Base.StringVector(x.len)
         len = GC.@preserve str unsafe_unescape_to_buffer(x.ptr, x.len, pointer(str))

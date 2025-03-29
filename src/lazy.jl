@@ -5,8 +5,6 @@ Detect the initial JSON value in `json`, returning a
 `JSONBase.LazyValue` instance. `json` input can be:
   * `AbstractString`
   * `AbstractVector{UInt8}`
-  * `IO` stream
-  * `Base.AbstractCmd`
 
 The `JSONBase.LazyValue` supports the "selection" syntax
 for lazily navigating the JSON value. Lazy values can be
@@ -36,7 +34,7 @@ function lazy end
 lazy(io::Union{IO, Base.AbstractCmd}; kw...) = lazy(Base.read(io); kw...)
 lazy(io::IOStream; kw...) = lazy(Mmap.mmap(io); kw...)
 
-@inline function lazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
+function lazy(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...)
     len = getlength(buf)
     if len == 0
         error = UnexpectedEOF
@@ -91,7 +89,7 @@ const LazyValues{T} = Union{LazyValue{T}, LazyObject{T}, LazyArray{T}}
 
 # core method that detects what JSON value is at the current position
 # and immediately returns an appropriate LazyValue instance
-@inline function lazy(buf, pos, len, b, opts, isroot=false)
+function lazy(buf, pos, len, b, opts, isroot=false)
     if opts.jsonlines
         return LazyValue(buf, pos, JSONTypes.ARRAY, opts, isroot)
     elseif b == UInt8('{')
@@ -134,7 +132,7 @@ _applyobject(f::F, x) where {F} = applyobject(f, x)
 # `keyvalfunc` is provided a PtrString => LazyValue pair
 # to materialize the key, call `tostring(key)`
 # returns a `pos` value that notes the next position where parsing should continue
-@inline function applyobject(keyvalfunc::F, x::LazyValues) where {F}
+function applyobject(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)
@@ -233,7 +231,7 @@ _applyarray(f::F, x) where {F} = applyarray(f, x)
 # applyeach always requires a key-value pair function
 # so we use the index as the key
 # returns a `pos` value that notes the next position where parsing should continue
-@inline function applyarray(keyvalfunc::F, x::LazyValues) where {F}
+function applyarray(keyvalfunc::F, x::LazyValues) where {F}
     pos = getpos(x)
     buf = getbuf(x)
     len = getlength(buf)
@@ -289,7 +287,7 @@ _applystring(f::F, x::LazyValue) where {F} = applystring(f, x)
 # or not. It allows materialize, _binary, etc. to deal
 # with the string data appropriately without forcing a String allocation
 # PtrString should NEVER be visible to users though!
-@inline function applystring(f::F, x::LazyValue) where {F}
+function applystring(f::F, x::LazyValue) where {F}
     buf, pos = getbuf(x), getpos(x)
     len, b = getlength(buf), getbyte(buf, pos)
     if b != UInt8('"')
@@ -328,7 +326,7 @@ _applynumber(f::F, x::LazyValue) where {F} = applynumber(f, x)
 # we rely on functionality in Parsers to help infer what kind
 # of number we're parsing; valid return types include:
 # Int64, Int128, BigInt, Float64 or BigFloat
-@inline function applynumber(valfunc::F, x::LazyValue) where {F}
+function applynumber(valfunc::F, x::LazyValue) where {F}
     buf, pos = getbuf(x), getpos(x)
     len = getlength(buf)
     b = getbyte(buf, pos)
@@ -361,7 +359,7 @@ end
 # to applyobject/applyarray/applynumber
 # for string, we just ignore the returned PtrString
 # and for bool/null, we just skip the appropriate number of bytes
-@inline function skip(x::LazyValue)
+function skip(x::LazyValue)
     T = gettype(x)
     if T == JSONTypes.OBJECT
         return _applyobject(pass, x)
@@ -388,7 +386,7 @@ struct IterateObjectClosure
     kvs::Vector{Pair{String, LazyValue}}
 end
 
-@inline function (f::IterateObjectClosure)(k, v)
+function (f::IterateObjectClosure)(k, v)
     push!(f.kvs, tostring(String, k) => v)
     return
 end

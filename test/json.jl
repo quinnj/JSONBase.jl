@@ -63,7 +63,7 @@ end
     @test JSONBase.json(Dict{Int, Int}()) == "{}"
     @test JSONBase.json(Dict{Int, Int}(1 => 2)) == "{\"1\":2}"
     @test JSONBase.json((a = 1, b = 2)) == "{\"a\":1,\"b\":2}"
-    @test JSONBase.json((a = nothing, b=2, c="hey", d=3.14, e=true, f=false)) == "{\"a\":null,\"b\":2,\"c\":\"hey\",\"d\":3.14,\"e\":true,\"f\":false}"
+    @test JSONBase.json((a = nothing, b=2, c="hey", d=3.14, e=true, f=false)) == "{\"b\":2,\"c\":\"hey\",\"d\":3.14,\"e\":true,\"f\":false}"
     # test the JSON output of nested array/objects
     @test JSONBase.json([1, [2, 3], [4, [5, 6]]]) == "[1,[2,3],[4,[5,6]]]"
     @test JSONBase.json(Dict{Int, Any}(1 => Dict{Int, Any}(2 => Dict{Int, Any}(3 => 4)))) == "{\"1\":{\"2\":{\"3\":4}}}"
@@ -87,14 +87,14 @@ end
     # test custom struct writing with undef fields
     x = UndefGuy()
     x.id = 10
-    @test JSONBase.json(x) == "{\"id\":10,\"name\":null}"
+    @test JSONBase.json(x) == "{\"id\":10}"
     # test structs with circular references
     x = CircularRef(11, nothing)
     x.self = x
-    @test JSONBase.json(x) == "{\"id\":11,\"self\":null}"
+    @test JSONBase.json(x) == "{\"id\":11}"
     # test lowering
     x = K(123, missing)
-    @test JSONBase.json(x) == "{\"id\":123,\"value\":null}"
+    @test JSONBase.json(x) == "{\"id\":123}"
     x = UUID(typemax(UInt128))
     @test JSONBase.json(x) == "\"ffffffff-ffff-ffff-ffff-ffffffffffff\""
     @test JSONBase.json(:a) == "\"a\""
@@ -210,4 +210,14 @@ end
     @test JSONBase.json([]; jsonlines=true) == "\n"
     # jsonlines not allowed on objects
     @test_throws ArgumentError JSONBase.json((a=1, b=2); jsonlines=true)
+    # circular reference tracking
+    a = Any[1, 2, 3]
+    push!(a, a)
+    @test JSONBase.json(a) == "[1,2,3,null]"
+    a = (a=1,)
+    x = [a, a, a]
+    @test JSONBase.json(x) == "[{\"a\":1},{\"a\":1},{\"a\":1}]"
+    a = CircularRef(1, nothing)
+    x = [a, a, a]
+    @test JSONBase.json(x) == "[{\"id\":1},{\"id\":1},{\"id\":1}]"
 end

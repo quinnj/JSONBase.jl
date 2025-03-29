@@ -14,7 +14,55 @@ StructUtils.lower(::AbstractJSONStyle, x::AbstractArray{<:Any,0}) = x[1]
 StructUtils.lower(::AbstractJSONStyle, x::AbstractArray{<:Any, N}) where {N} = (view(x, ntuple(_ -> :, N - 1)..., j) for j in axes(x, N))
 StructUtils.lower(::AbstractJSONStyle, x::AbstractVector) = x
 
-include_nonempty(::Type{T}) where {T} = true
+"""
+    JSONBase.include_nonnull(::Type{T})::Bool
+    JSONBase.include_nonnull(::AbstractJSONStyle, ::Type{T})::Bool
+    
+Controls whether struct fields that are undefined or are `nothing` are included in the JSON output.
+`true` by default, meaning only *non-null* fields are included. To instead ensure all fields are
+included, regardless of undef or `nothing`, set this to `false`.
+
+```julia
+JSONBase.include_nonnull(::Type{MyStruct}) = false
+```
+
+The 2nd definition also allows overriding the default behavior for a custom style.
+
+```julia
+struct MyStyle <: JSONBase.AbstractJSONStyle end
+# this will override the default behavior for all types
+JSONBase.include_nonnull(::MyStyle, ::Type{T}) where {T} = false
+
+# passing MyStyle will now use my custom behavior for all types
+JSONBase.json(x; style=MyStyle())
+```
+"""
+include_nonnull(::Type{T}) where {T} = true
+include_nonnull(::AbstractJSONStyle, ::Type{T}) where {T} = include_nonnull(T)
+
+"""
+    JSONBase.include_nonempty(::Type{T})::Bool
+    JSONBase.include_nonempty(::AbstractJSONStyle, ::Type{T})::Bool
+
+Controls whether struct fields that are empty are included in the JSON output.
+`false` by default, meaning empty fields *are* included. To instead exclude empty fields,
+set this to `true`.
+
+```julia
+JSONBase.include_nonempty(::Type{MyStruct}) = true
+```
+
+The 2nd definition also allows overriding the default behavior for a custom style.
+```julia
+struct MyStyle <: JSONBase.AbstractJSONStyle end
+# this will override the default behavior for all types
+JSONBase.include_nonempty(::MyStyle, ::Type{T}) where {T} = true
+
+# passing MyStyle will now use my custom behavior for all types
+JSONBase.json(x; style=MyStyle())
+```
+"""
+include_nonempty(::Type{T}) where {T} = false
 include_nonempty(::AbstractJSONStyle, ::Type{T}) where {T} = include_nonempty(T)
 
 is_empty(x) = false
@@ -99,7 +147,7 @@ function json(io::IO, x::T; style::AbstractJSONStyle=JSONStyle(), allownan::Bool
     _jsonlines_pretty_check(jsonlines, pretty)
     y = StructUtils.lower(style, x)
     buf = Vector{UInt8}(undef, sizeguess(y))
-    pos = json!(buf, 1, y, style, allownan, jsonlines, nothing, pretty === true ? 4 : Int(pretty))
+    pos = json!(buf, 1, y, style, allownan, jsonlines, Any[y], pretty === true ? 4 : Int(pretty))
     return write(io, resize!(buf, pos - 1))
 end
 
@@ -107,7 +155,7 @@ function json(x; style::AbstractJSONStyle=JSONStyle(), allownan::Bool=false, jso
     _jsonlines_pretty_check(jsonlines, pretty)
     y = StructUtils.lower(style, x)
     buf = Base.StringVector(sizeguess(y))
-    pos = json!(buf, 1, y, style, allownan, jsonlines, nothing, pretty === true ? 4 : Int(pretty))
+    pos = json!(buf, 1, y, style, allownan, jsonlines, Any[y], pretty === true ? 4 : Int(pretty))
     return String(resize!(buf, pos - 1))
 end
 
@@ -139,10 +187,10 @@ struct WriteClosure{JS, arraylike, T} # T is the type of the parent object/array
     style::JS
     allownan::Bool
     jsonlines::Bool
-    objids::Base.IdSet{Any} # to track circular references
+    ancestor_stack::Vector{Any} # to track circular references
 end
 
-@inline function indent(buf, pos, ind, depth)
+function indent(buf, pos, ind, depth)
     if ind > 0
         n = ind * depth + 1
         @checkn n
@@ -155,8 +203,14 @@ end
     return pos
 end
 
-@inline function (f::WriteClosure{JS, arraylike, T})(key, val) where {JS, arraylike, T}
-    include_nonempty(f.style, T) && is_empty(val) && return
+function (f::WriteClosure{JS, arraylike, T})(key, val) where {JS, arraylike, T}
+    is_circ_ref = ismutabletype(typeof(val)) && any(x -> x === val, f.ancestor_stack)
+    if !arraylike
+        # for objects, check include_nonnull/include_nonempty
+        # and skip if the value is null or empty
+        include_nonnull(f.style, T) && (is_circ_ref || val === nothing) && return
+        include_nonempty(f.style, T) && (is_circ_ref || is_empty(val)) && return
+    end
     pos = unsafe_load(f.pos)
     buf = f.buf
     ind = f.indent
@@ -173,13 +227,15 @@ end
             pos += 1
         end
     end
-    # check if the lowered value is in our objectid set
-    if ismutabletype(typeof(val)) && val in f.objids
+    # check if the lowered value is in our ancestor stack
+    if is_circ_ref
         # if so, it's a circular reference! so we just write `null`
         pos = _null(buf, pos)
     else
         # note that jsonlines is hard-coded as false here because you can't recursively print jsonlines
-        pos = json!(buf, pos, val, f.style, f.allownan, false, f.objids, ind, f.depth)
+        push!(f.ancestor_stack, val)
+        pos = json!(buf, pos, val, f.style, f.allownan, false, f.ancestor_stack, ind, f.depth)
+        pop!(f.ancestor_stack)
     end
     @checkn 1
     @inbounds buf[pos] = f.jsonlines ? UInt8('\n') : UInt8(',')
@@ -192,7 +248,7 @@ end
 @noinline throwjsonlines() = throw(ArgumentError("jsonlines only supported for arraylike"))
 
 # assume x is lowered value
-function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false, jsonlines::Bool=false, objids::Union{Nothing, Base.IdSet{Any}}=nothing, ind::Int=0, depth::Int=0)
+function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false, jsonlines::Bool=false, ancestor_stack::Union{Nothing, Vector{Any}}=nothing, ind::Int=0, depth::Int=0)
     # string
     if x isa AbstractString
         return _string(buf, pos, x)
@@ -241,10 +297,7 @@ function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false
         end
         pre_pos = pos
         ref = Ref(pos)
-        # use an IdSet to keep track of circular references
-        objids = objids === nothing ? Base.IdSet{Any}() : objids
-        ismutabletype(typeof(x)) && push!(objids, x)
-        c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), ind, depth + 1, style, allownan, jsonlines, objids)
+        c = WriteClosure{typeof(style), al, typeof(x)}(buf, Base.unsafe_convert(Ptr{Int}, ref), ind, depth + 1, style, allownan, jsonlines, ancestor_stack)
         GC.@preserve ref StructUtils.applyeach(style, c, x)
         # get updated pos
         pos = unsafe_load(c.pos)
@@ -265,7 +318,7 @@ function json!(buf, pos, x, style::AbstractJSONStyle=JSONStyle(), allownan=false
     end
 end
 
-@inline function _null(buf, pos)
+function _null(buf, pos)
     @checkn 4
     @inbounds buf[pos] = 'n'
     @inbounds buf[pos + 1] = 'u'
@@ -315,11 +368,11 @@ function escapelength(str)
 end
 
 # this definition is really for object keys that may not be AbstractString
-@inline _string(buf, pos, x) = _string(buf, pos, string(x))
-@inline _string(buf, pos, x::Values) = _string(buf, pos, getindex(x))
-@inline _string(buf, pos, x::PtrString) = _string(buf, pos, tostring(String, x))
+_string(buf, pos, x) = _string(buf, pos, string(x))
+_string(buf, pos, x::Values) = _string(buf, pos, getindex(x))
+_string(buf, pos, x::PtrString) = _string(buf, pos, tostring(String, x))
 
-@inline function _string(buf, pos, x::AbstractString)
+function _string(buf, pos, x::AbstractString)
     sz = ncodeunits(x)
     el = escapelength(x)
     @checkn (el + 2)
@@ -348,7 +401,7 @@ _split_sign(x::BigInt) = (abs(x), x < 0)
 
 @noinline infcheck(x, allownan) = isfinite(x) || allownan || throw(ArgumentError("$x not allowed to be written in JSON spec; pass `allownan=true` to allow anyway"))
 
-@inline function _number(buf, pos, x::Real, allownan)
+function _number(buf, pos, x::Real, allownan)
     if x isa Integer
         y, neg = _split_sign(x)
         n = i = ndigits(y, base=10, pad=1)

@@ -1,7 +1,5 @@
 module JSONBase
 
-export Selectors
-
 using Mmap, Dates, UUIDs, Logging
 using Parsers, StructUtils
 
@@ -28,7 +26,7 @@ const Values = Union{LazyValue, BinaryValue}
 
 # allow LazyValue/BinaryValue to participate in
 # selection syntax by overloading applyeach
-@inline function StructUtils.applyeach(::StructUtils.StructStyle, f, x::Values)
+function StructUtils.applyeach(::StructUtils.StructStyle, f, x::Values)
     if gettype(x) == JSONTypes.OBJECT
         return applyobject(f, x)
     elseif gettype(x) == JSONTypes.ARRAY

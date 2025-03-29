@@ -33,7 +33,7 @@ like `JSONBase.materialize("[[[1.0,2.0]]]", Array{Float64, 3})`. Note that n-dim
 arrays are written to json as nested JSON arrays by default, to enable lossless materialization,
 though the dimensionality must still be provided to the call to `materialize`.
 
-For materializing JSON into an existing object, see [`materialize!`](@ref).
+For materializing JSON into an existing object via mutation, see [`materialize!`](@ref).
 
 Currently supported keyword arguments include:
   * `float64`: for parsing all json numbers as Float64 instead of inferring int vs. float;
@@ -42,7 +42,7 @@ Currently supported keyword arguments include:
     delimited by newlines, each element being parsed from each row/line in the input
   * `dicttype`: a custom `AbstractDict` type to use instead of `$DEFAULT_OBJECT_TYPE` as the default
     type for JSON object materialization
-  * `style`: a custom [`JSONStyle`](@ref) subtype instance to be used in calls to `lift`. This allows over-riding
+  * `style`: a custom [`JSONStyle`](@ref) subtype instance to be used in calls to `lift`. This allows overriding
     default lift behavior for non-owned types.
 """
 function materialize end
@@ -77,7 +77,7 @@ objecttype(::JSONReadStyle{OT}) where {OT} = OT
 
 StructUtils.arraylike(::AbstractJSONReadStyle, ::Type{<:Tuple}) = false
 
-@inline function StructUtils.choosetype(f::F, style::AbstractJSONStyle, ::Type{Any}, x::Values, tags) where {F}
+function StructUtils.choosetype(f::F, style::AbstractJSONStyle, ::Type{Any}, x::Values, tags) where {F}
     # generic materialization, choose appropriate default type
     type = gettype(x)
     if type == JSONTypes.OBJECT
@@ -101,7 +101,7 @@ StructUtils.arraylike(::AbstractJSONReadStyle, ::Type{<:Tuple}) = false
     end
 end
 
-@inline function materialize(x::LazyValue, ::Type{T}=Any; dicttype::Type{O}=DEFAULT_OBJECT_TYPE, style::AbstractJSONStyle=JSONReadStyle{dicttype}()) where {T, O}
+function materialize(x::LazyValue, ::Type{T}=Any; dicttype::Type{O}=DEFAULT_OBJECT_TYPE, style::AbstractJSONStyle=JSONReadStyle{dicttype}()) where {T, O}
     vc = StructUtils.ValueClosure{T}()
     pos = StructUtils.make(vc, style, T, x)
     getisroot(x) && checkendpos(x, T, pos)
@@ -111,7 +111,7 @@ end
 # for LazyValue, if x started at the beginning of the JSON input,
 # then we want to ensure that the entire input was consumed
 # and error if there are any trailing invalid JSON characters
-@inline function checkendpos(x::LazyValue, ::Type{T}, pos) where {T}
+function checkendpos(x::LazyValue, ::Type{T}, pos) where {T}
     buf = getbuf(x)
     len = getlength(buf)
     if pos <= len
@@ -139,12 +139,12 @@ mutable struct LiftClosure{T, JS, TG, F}
     LiftClosure{T}(style::JS, tags::TG, f::F) where {T, JS, TG, F} = new{T, JS, TG, F}(style, tags, f)
 end
 
-@inline (f::LiftClosure{T, JS, TG, F})(x) where {T, JS, TG, F} = StructUtils.lift(f.f, f.style, T, x, f.tags)
-@inline (f::LiftClosure{T, JS, F})(x::PtrString) where {T, JS, F} = StructUtils.lift(f.f, f.style, T, tostring(T, x), f.tags)
+(f::LiftClosure{T, JS, TG, F})(x) where {T, JS, TG, F} = StructUtils.lift(f.f, f.style, T, x, f.tags)
+(f::LiftClosure{T, JS, F})(x::PtrString) where {T, JS, F} = StructUtils.lift(f.f, f.style, T, tostring(T, x), f.tags)
 
-@inline StructUtils.lift(f::F, style::AbstractJSONStyle, ::Type{T}, x::PtrString, tags) where {F, T} = StructUtils.lift(f, style, T, tostring(T, x), tags)
+StructUtils.lift(f::F, style::AbstractJSONStyle, ::Type{T}, x::PtrString, tags) where {F, T} = StructUtils.lift(f, style, T, tostring(T, x), tags)
 
-@inline function StructUtils.lift(f::F, style::AbstractJSONStyle, ::Type{T}, x::Values, tags::TG) where {F, T, TG}
+function StructUtils.lift(f::F, style::AbstractJSONStyle, ::Type{T}, x::Values, tags::TG) where {F, T, TG}
     y = LiftClosure{T}(style, tags, f)
     type = gettype(x)
     if type == JSONTypes.STRING

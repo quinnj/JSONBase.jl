@@ -28,7 +28,7 @@ binary(io::Union{IO, Base.AbstractCmd}; kw...) = binary(Base.read(io); kw...)
 binary(io::IOStream; kw...) = binary(Mmap.mmap(io); kw...)
 binary(buf::Union{AbstractVector{UInt8}, AbstractString}; kw...) = binary(lazy(buf; kw...))
 
-@inline function binary(x::LazyValue)
+function binary(x::LazyValue)
     tape = Vector{UInt8}(undef, 512)
     i = 1
     pos, i = binary!(x, tape, i)
@@ -136,8 +136,7 @@ const BinaryValues = Union{BinaryValue, BinaryObject, BinaryArray}
 
 include("binaryutils.jl")
 
-@inline function reallocate!(x::LazyValue, tape, i)
-    # println("reallocating...")
+function reallocate!(x::LazyValue, tape, i)
     len = getlength(getbuf(x))
     pos = getpos(x)
     tape_len = ceil(Int, ((len * i) ÷ pos) * 1.05)
@@ -160,7 +159,7 @@ struct BinaryObjectClosure{T}
     tape_nfields::Int # the position in the tape where we store the current nfields
 end
 
-@inline function (f::BinaryObjectClosure{T})(k, v) where {T}
+function (f::BinaryObjectClosure{T})(k, v) where {T}
     # first we encode the key
     i = Int(readnumber(f.tape, f.tape_i, Int32))
     i = _binary(k, f.tape, i, f.x)
@@ -180,7 +179,7 @@ struct BinaryArrayClosure
     tape_nelems::Int
 end
 
-@inline function (f::BinaryArrayClosure)(::Int, v)
+function (f::BinaryArrayClosure)(::Int, v)
     i = Int(readnumber(f.tape, f.tape_i, Int32))
     pos, i = binary!(v, f.tape, i)
     # update our i
@@ -198,13 +197,13 @@ struct BinaryNumberClosure{T}
     x::LazyValue{T}
 end
 
-@inline function (f::BinaryNumberClosure{T})(y::Y) where {T, Y}
+function (f::BinaryNumberClosure{T})(y::Y) where {T, Y}
     i = _binary(y, f.tape, f.i, f.x)
     unsafe_store!(f.newi, i)
     return
 end
 
-@inline function binary!(x::LazyValue, tape, i)
+function binary!(x::LazyValue, tape, i)
     if gettype(x) == JSONTypes.OBJECT
         meta_i = i
         @check 1 + 4 + 4
@@ -329,7 +328,7 @@ function embedded_sizemeta(n)
     return sm
 end
 
-@inline function _binary(y::PtrString, tape, i, x)
+function _binary(y::PtrString, tape, i, x)
     n = y.len
     embedded_size, sm = sizemeta(n)
     @check 1 + (embedded_size ? 0 : 4) + n
@@ -341,7 +340,7 @@ end
     return unsafe_copyto!(y, tape, i, x)
 end
 
-@inline function Base.unsafe_copyto!(ptrstr::PtrString, tape::Vector{UInt8}, i, x) # x is LazyValue
+function Base.unsafe_copyto!(ptrstr::PtrString, tape::Vector{UInt8}, i, x) # x is LazyValue
     @check ptrstr.len
     if ptrstr.escaped
         return i + GC.@preserve tape unsafe_unescape_to_buffer(ptrstr.ptr, ptrstr.len, pointer(tape, i))
@@ -400,7 +399,7 @@ function writenumber(y::BigInt, tape, i, x::LazyValue)
     return i + n
 end
 
-@inline function readnumber(tape, i, ::Type{BigInt})
+function readnumber(tape, i, ::Type{BigInt})
     n = tape[i]
     i += 1
     @assert (i + n - 1) <= length(tape)
@@ -446,7 +445,7 @@ function writenumber(y::BigFloat, tape, i, x::LazyValue)
     return i + n
 end
 
-@inline function readnumber(tape, i, ::Type{BigFloat})
+function readnumber(tape, i, ::Type{BigFloat})
     n = tape[i]
     i += 1
     @assert (i + n - 1) <= length(tape)
@@ -458,7 +457,7 @@ end
     return z, i
 end
 
-@inline function _binary(y::Integer, tape, i, x::LazyValue)
+function _binary(y::Integer, tape, i, x::LazyValue)
     if y <= typemax(Int8)
         return writenumber(y % Int8, tape, i, x)
     elseif y <= typemax(Int16)
@@ -474,7 +473,7 @@ end
     end
 end
 
-@inline function _binary(y::AbstractFloat, tape, i, x::LazyValue)
+function _binary(y::AbstractFloat, tape, i, x::LazyValue)
     if Float16(y) == y
         return writenumber(Float16(y), tape, i, x)
     elseif Float32(y) == y
@@ -487,7 +486,7 @@ end
 end
 
 # reading
-@inline function readnumber(tape, i, ::Type{T}) where {T}
+function readnumber(tape, i, ::Type{T}) where {T}
     @assert (sizeof(T) + i - 1) <= length(tape)
     ptr = Base.bitcast(Ptr{T}, pointer(tape, i))
     return unsafe_load(ptr)
@@ -498,7 +497,7 @@ end
 # then looping over them to call keyvalfunc on the
 # key-value pairs.
 # follows the same rules as applyobject on LazyValue for returning
-@inline function applyobject(keyvalfunc::F, x::BinaryValues) where {F}
+function applyobject(keyvalfunc::F, x::BinaryValues) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -518,7 +517,7 @@ end
     return pos
 end
 
-@inline function applyarray(keyvalfunc::F, x::BinaryValues) where {F}
+function applyarray(keyvalfunc::F, x::BinaryValues) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -541,7 +540,7 @@ _applystring(f::F, x::BinaryValue) where {F} = applystring(f, x)
 # return a PtrString for an embedded string in binary format
 # we return a PtrString to allow callers flexibility
 # in how they want to materialize/compare/etc.
-@inline function applystring(f::F, x::BinaryValue) where {F}
+function applystring(f::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -568,7 +567,7 @@ end
 # inspecting the BinaryMeta byte to determine the
 # # of bytes the integer takes for encoding,
 # or switching to BigInt decoding if the embedded size is 0
-@inline function applyint(valfunc::F, x::BinaryValue) where {F}
+function applyint(valfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
@@ -597,7 +596,7 @@ end
     return pos + sz
 end
 
-@inline function applyfloat(valfunc::F, x::BinaryValue) where {F}
+function applyfloat(valfunc::F, x::BinaryValue) where {F}
     tape = gettape(x)
     pos = getpos(x)
     bm = BinaryMeta(getbyte(tape, pos))
